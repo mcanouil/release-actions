@@ -1,4 +1,4 @@
-# release-actions
+# Release Actions
 
 Three composite GitHub Actions that release a repository from its changelog.
 
