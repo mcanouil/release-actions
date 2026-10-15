@@ -61,7 +61,10 @@ if [[ "${GENERATE_NOTES}" == "true" ]]; then
   [[ -n "${TARGET}" ]] || die "generate-notes needs target, the commit of the release."
   [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
   if [[ -z "${PREVIOUS_TAG}" ]]; then
-    PREVIOUS_TAG="$(gh api "repos/${REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || true)"
+    # Without a release, gh exits 1 and still prints the error body.
+    if latest="$(gh api "repos/${REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null)"; then
+      PREVIOUS_TAG="${latest}"
+    fi
   fi
   args=(api --method POST "repos/${REPOSITORY}/releases/generate-notes" -f "tag_name=${TAG}" -f "target_commitish=${TARGET}")
   if [[ -n "${PREVIOUS_TAG}" ]]; then
