@@ -72,8 +72,7 @@ if [[ "${GENERATE_NOTES}" == "true" ]]; then
 fi
 
 # Body.
-body="$(temp_dir)/release-body.md"
-: >"${body}"
+body="$(mktemp "$(temp_dir)/release-body.XXXXXX")"
 append() {
   if [[ -s "${body}" ]]; then
     printf '\n' >>"${body}"

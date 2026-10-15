@@ -230,6 +230,8 @@ Each asset glob must match at least one file.
 
 With `rolling: true`, `target` must be a full commit SHA.
 A draft release has no tag, so `rolling` and `draft` cannot both be `true`.
+`rolling` and `prerelease` cannot both be `true`, because callers that pin the rolling tags would then get the prerelease.
+`tag-prefix` can contain only letters, digits, dots, hyphens and underscores.
 
 If a ruleset protects the tags or the default branch, use a GitHub App token that the ruleset exempts.
 

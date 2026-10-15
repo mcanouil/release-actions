@@ -145,3 +145,17 @@ refuses "generate-notes is 'maybe'" "bad boolean"
 head -c 125001 /dev/zero | tr '\0' a >"${SCRATCH}/big.md"
 run_notes NOTES_FILE="${SCRATCH}/big.md" SECTION_HEADING=
 refuses "the release body is 125002 characters" "size limit"
+
+# Each call writes its own body file.
+out="${SCRATCH}/out"
+: >"${out}"
+GITHUB_OUTPUT="${out}" RELEASE_DATE=2026-10-15 NOTES_FILE="${notes}" "${script}"
+first="$(output_value body-file "${out}")"
+: >"${out}"
+GITHUB_OUTPUT="${out}" RELEASE_DATE=2026-10-15 VERSION=1.4.2 "${script}"
+second="$(output_value body-file "${out}")"
+if [[ "${first}" == "${second}" ]]; then
+  printf '  two notes calls share the body file %s\n' "${first}" >&2
+  exit 1
+fi
+assert_eq $'## Changelog\n\n- feat: Next thing. (#7)' "$(cat "${first}")" "first body kept"

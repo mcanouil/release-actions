@@ -113,3 +113,13 @@ assert_status 0 "${STATUS}" "rolling: ${ERR}"
 assert_contains "${LOG}" "api --method PATCH repos/o/r/git/refs/tags/v1 -f sha=${sha} -F force=true --silent" "move v1"
 assert_contains "${LOG}" "api --method POST repos/o/r/git/refs -f ref=refs/tags/v1.5 -f sha=${sha} --silent" "create v1.5"
 assert_contains "$(cat "${SCRATCH}/summary")" "- Rolling tags: v1 v1.5" "rolling tags in the summary"
+
+run_release ROLLING=true PRERELEASE=true
+refuses_release "rolling and prerelease are both true" "rolling prerelease"
+
+run_release ASSETS='dist/*.zip #Archive (zip)'
+assert_status 0 "${STATUS}" "space before label: ${ERR}"
+assert_contains "${LOG}" "--notes-file ${body} dist/demo-1.5.0.zip#Archive (zip)" "glob and label trimmed"
+
+run_release TAG_PREFIX='v/'
+refuses_release "tag-prefix is 'v/'" "bad tag prefix"

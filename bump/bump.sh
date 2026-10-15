@@ -165,9 +165,11 @@ if [[ -n "${CHANGELOG}" ]]; then
   fi
   status=0
   perl "${LIB}/section.pl" version "${CHANGELOG}" "${CHANGELOG_HEADING}" "${version}" >/dev/null || status=$?
-  if [[ ${status} -ne 2 ]]; then
-    die "${CHANGELOG} already has the heading '${heading}'. Was this version released already?"
-  fi
+  case "${status}" in
+  2) ;;
+  0 | 3) die "${CHANGELOG} already has the heading '${heading}'. Was this version released already?" ;;
+  *) die "could not read ${CHANGELOG}." ;;
+  esac
 fi
 
 # Writes.
