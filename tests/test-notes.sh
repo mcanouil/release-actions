@@ -55,11 +55,6 @@ run_notes() {
   fi
 }
 
-refuses() {
-  assert_status 1 "${STATUS}" "$2 fails"
-  assert_contains "${ERR}" "$1" "$2 message"
-}
-
 run_notes NOTES_FILE="${notes}"
 assert_status 0 "${STATUS}" "notes-file: ${ERR}"
 assert_eq $'## Changelog\n\n- feat: Next thing. (#7)' "${BODY}" "default section heading"
@@ -113,6 +108,9 @@ refuses "set notes-file, or version" "neither input"
 
 run_notes NOTES_FILE="${SCRATCH}/absent-notes.md"
 refuses "does not exist" "missing notes file"
+
+run_notes NOTES_FILE="${notes}" RELEASE_DATE=2026/10/15
+refuses "Use YYYY-MM-DD" "bad date"
 
 # Generated notes.
 run_notes NOTES_FILE="${notes}" GENERATE_NOTES=true TAG=v1.5.0 TARGET=abc123 GH_LATEST=v1.4.2

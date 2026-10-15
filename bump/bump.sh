@@ -17,23 +17,13 @@ TARGETS="${TARGETS:-}"
 VERSION_SOURCE="${VERSION_SOURCE:-target}"
 TAG_PREFIX="${TAG_PREFIX:-}"
 CHANGELOG="${CHANGELOG-CHANGELOG.md}"
-CHANGELOG_HEADING="${CHANGELOG_HEADING:-}"
-if [[ -z "${CHANGELOG_HEADING}" ]]; then
-  CHANGELOG_HEADING='## {version} ({date})'
-fi
+CHANGELOG_HEADING="${CHANGELOG_HEADING:-${DEFAULT_CHANGELOG_HEADING}}"
 ALLOW_EMPTY="${ALLOW_EMPTY:-false}"
-RELEASE_DATE="${RELEASE_DATE:-}"
-if [[ -z "${RELEASE_DATE}" ]]; then
-  RELEASE_DATE="$(date -u +%Y-%m-%d)"
-fi
 placeholder_regex='\{(version|date|major)\}'
 
 [[ -n "${BUMP}" ]] || die "bump is empty. Use patch, minor, major, calver, or a version such as 1.2.3."
-[[ "${RELEASE_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "date is '${RELEASE_DATE}'. Use YYYY-MM-DD."
-case "${ALLOW_EMPTY}" in
-true | false) ;;
-*) die "allow-empty is '${ALLOW_EMPTY}'. Use true or false." ;;
-esac
+RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
+require_bool allow-empty "${ALLOW_EMPTY}"
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
 require_tools perl yq
 
@@ -64,11 +54,11 @@ if [[ -n "${TARGETS//[[:space:]]/}" ]]; then
       die "required must be true or false in every entry of targets."
     fi
   done < <(yq -r '.[] | [(.file | tag), (.pattern | tag), (.source | tag), (.required | tag)] | @tsv' <<<"${TARGETS}")
-  if yq -r '.[] | ((.file == "") or (.pattern == ""))' <<<"${TARGETS}" | grep -qx true; then
-    die "every entry of targets needs file and pattern, as non-empty strings."
-  fi
   # One field per line: @tsv would quote patterns that hold double quotes.
   while IFS= read -r file && IFS= read -r pattern && IFS= read -r source && IFS= read -r required; do
+    if [[ -z "${file}" || -z "${pattern}" ]]; then
+      die "every entry of targets needs file and pattern, as non-empty strings."
+    fi
     t_file+=("${file}")
     t_pattern+=("${pattern}")
     t_source+=("${source}")
@@ -78,9 +68,13 @@ fi
 n=${#t_file[@]}
 
 source_index=-1
+first_version_index=-1
 for ((i = 0; i < n; i++)); do
   if [[ ! "${t_pattern[i]}" =~ ${placeholder_regex} ]]; then
     die "target ${t_file[i]}: the pattern '${t_pattern[i]}' has no {version}, {date} or {major} placeholder."
+  fi
+  if [[ ${first_version_index} -lt 0 && "${t_pattern[i]}" == *"{version}"* ]]; then
+    first_version_index=${i}
   fi
   if [[ "${t_source[i]}" == "true" ]]; then
     if [[ ${source_index} -ge 0 ]]; then
@@ -120,12 +114,7 @@ done
 case "${VERSION_SOURCE}" in
 target)
   if [[ ${source_index} -lt 0 ]]; then
-    for ((i = 0; i < n; i++)); do
-      if [[ "${t_pattern[i]}" == *"{version}"* ]]; then
-        source_index=${i}
-        break
-      fi
-    done
+    source_index=${first_version_index}
   fi
   if [[ ${source_index} -lt 0 ]]; then
     die "no target has a {version} pattern to read the current version from. Add one, or set version-source: tag."
@@ -144,21 +133,7 @@ target)
   ;;
 tag)
   require_tools git
-  current="$(git tag --list | PREFIX="${TAG_PREFIX}" perl -ne '
-    chomp;
-    next unless s/\A\Q$ENV{PREFIX}\E(?=[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9]+)?\z)//;
-    push @versions, $_;
-    END {
-      my @sorted = sort {
-        my @x = split /[.-]/, $a;
-        my @y = split /[.-]/, $b;
-        $x[3] //= 1;
-        $y[3] //= 1;
-        $x[0] <=> $y[0] || $x[1] <=> $y[1] || $x[2] <=> $y[2] || $x[3] <=> $y[3]
-      } @versions;
-      print $sorted[-1] if @sorted;
-    }')"
-  current="${current:-0.0.0}"
+  current="$(latest_tag "${TAG_PREFIX}")"
   ;;
 *)
   die "version-source is '${VERSION_SOURCE}'. Use target or tag."
@@ -166,15 +141,13 @@ tag)
 esac
 
 version="$(next_version "${current}" "${BUMP}" "${RELEASE_DATE}")"
-core="${version%%-*}"
-major="${core%%.*}"
-minor="${core%.*}"
+major="$(version_major "${version}")"
+minor="$(version_minor "${version}")"
 
 # Changelog.
 notes_file="$(temp_dir)/release-notes-${version}.md"
 : >"${notes_file}"
-heading="${CHANGELOG_HEADING//"{version}"/${version}}"
-heading="${heading//"{date}"/${RELEASE_DATE}}"
+heading="$(printf '%s' "${CHANGELOG_HEADING}" | FILL_version="${version}" FILL_date="${RELEASE_DATE}" fill_template version,date changelog-heading)"
 if [[ -n "${CHANGELOG}" ]]; then
   if [[ ! -f "${CHANGELOG}" ]]; then
     die "${CHANGELOG} does not exist. Create it with a '## Unreleased' heading, or set changelog to an empty string."
@@ -190,27 +163,22 @@ if [[ -n "${CHANGELOG}" ]]; then
   if [[ -z "$(tr -d '[:space:]' <"${notes_file}")" && "${ALLOW_EMPTY}" != "true" ]]; then
     die "the Unreleased section of ${CHANGELOG} is empty. Add entries under it, or set allow-empty: true."
   fi
-  if tr -d '\r' <"${CHANGELOG}" | grep -qxF "${heading}"; then
+  status=0
+  perl "${LIB}/section.pl" version "${CHANGELOG}" "${CHANGELOG_HEADING}" "${version}" >/dev/null || status=$?
+  if [[ ${status} -ne 2 ]]; then
     die "${CHANGELOG} already has the heading '${heading}'. Was this version released already?"
   fi
 fi
 
 # Writes.
-changed=()
 export VERSION="${version}" DATE="${RELEASE_DATE}" MAJOR="${major}"
 for ((i = 0; i < ${#e_file[@]}; i++)); do
   perl "${LIB}/target.pl" replace "${e_pattern[i]}" "${e_file[i]}" >/dev/null
-  changed+=("${e_file[i]}")
 done
 if [[ -n "${CHANGELOG}" ]]; then
-  HEADING="${heading}" perl -i -pe '
-    if (!$done && /\A## (Unreleased|\[Unreleased\])[ \t]*\r?$/) {
-      $_ = "## $1\n\n$ENV{HEADING}\n";
-      $done = 1;
-    }' "${CHANGELOG}"
-  changed+=("${CHANGELOG}")
+  HEADING="${heading}" perl "${LIB}/section.pl" roll "${CHANGELOG}"
 fi
-files="$(printf '%s\n' ${changed[@]+"${changed[@]}"} | LC_ALL=C sort -u | sed '/^$/d')"
+files="$(printf '%s\n' ${e_file[@]+"${e_file[@]}"} ${CHANGELOG:+"${CHANGELOG}"} | LC_ALL=C sort -u | sed '/^$/d')"
 
 set_output version "${version}"
 set_output previous "${current}"

@@ -39,3 +39,8 @@ refuse 1.4.2 1.4.2 "already the current version"
 refuse 1.4.2 bogus "Use patch, minor, major, calver"
 refuse 1.4 patch "is not X.Y.Z"
 refuse 2026.10.15-rc calver "suffix that is not a number"
+
+assert_eq "1" "$(version_major 1.5.0)" "major of semver"
+assert_eq "1.5" "$(version_minor 1.5.0)" "minor of semver"
+assert_eq "2026" "$(version_major 2026.10.15-2)" "major of calver"
+assert_eq "2026.10" "$(version_minor 2026.10.15-2)" "minor of calver"

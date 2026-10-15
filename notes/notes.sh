@@ -13,28 +13,19 @@ source "${LIB}/common.sh"
 NOTES_FILE="${NOTES_FILE:-}"
 VERSION="${VERSION:-}"
 CHANGELOG="${CHANGELOG:-CHANGELOG.md}"
-CHANGELOG_HEADING="${CHANGELOG_HEADING:-}"
-if [[ -z "${CHANGELOG_HEADING}" ]]; then
-  CHANGELOG_HEADING='## {version} ({date})'
-fi
+CHANGELOG_HEADING="${CHANGELOG_HEADING:-${DEFAULT_CHANGELOG_HEADING}}"
 HEADER="${HEADER:-}"
 SECTION_HEADING="${SECTION_HEADING-## Changelog}"
 GENERATE_NOTES="${GENERATE_NOTES:-false}"
 TAG="${TAG:-}"
 TARGET="${TARGET:-${GITHUB_SHA:-}}"
 PREVIOUS_TAG="${PREVIOUS_TAG:-}"
-RELEASE_DATE="${RELEASE_DATE:-}"
-if [[ -z "${RELEASE_DATE}" ]]; then
-  RELEASE_DATE="$(date -u +%Y-%m-%d)"
-fi
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 MAX_LENGTH=125000
 
 require_tools perl
-case "${GENERATE_NOTES}" in
-true | false) ;;
-*) die "generate-notes is '${GENERATE_NOTES}'. Use true or false." ;;
-esac
+require_bool generate-notes "${GENERATE_NOTES}"
+RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 [[ -n "${NOTES_FILE}" || -n "${VERSION}" ]] || die "set notes-file, or version to read the section from ${CHANGELOG}."
 
 # Section.
@@ -57,16 +48,9 @@ fi
 header=""
 if [[ -n "${HEADER}" ]]; then
   [[ -f "${HEADER}" ]] || die "header ${HEADER} does not exist."
-  errors="$(temp_dir)/notes-header.err"
-  status=0
+  # shellcheck disable=SC2094 # The second argument only names the file in messages.
   header="$(FILL_version="${VERSION}" FILL_tag="${TAG}" FILL_date="${RELEASE_DATE}" FILL_repository="${REPOSITORY}" \
-    perl "${LIB}/fill.pl" version,tag,date,repository <"${HEADER}" 2>"${errors}")" || status=$?
-  case "${status}" in
-  0) ;;
-  2) die "${HEADER} has unknown placeholders: $(cat "${errors}"). Use {version}, {tag}, {date} or {repository}." ;;
-  3) die "${HEADER} uses $(cat "${errors}"), but it has no value. Set the matching input." ;;
-  *) die "could not fill ${HEADER}." ;;
-  esac
+    fill_template version,tag,date,repository "${HEADER}" <"${HEADER}")"
 fi
 
 # Generated notes.

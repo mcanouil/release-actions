@@ -48,9 +48,8 @@ run_release() {
   LOG="$(cat "${GH_LOG}")"
 }
 
-refuses() {
-  assert_status 1 "${STATUS}" "$2 fails"
-  assert_contains "${ERR}" "$1" "$2 message"
+refuses_release() {
+  refuses "$1" "$2"
   if grep -q '^release create' "${GH_LOG}"; then
     printf '  %s: a release was created\n' "$2" >&2
     exit 1
@@ -69,7 +68,7 @@ run_release TITLE='Demo {version} ({date})'
 assert_contains "${LOG}" "--title Demo 1.5.0 (2026-10-15) --notes-file" "title template"
 
 run_release TITLE='Demo {verison}'
-refuses "unknown placeholders: {verison}" "title typo"
+refuses_release "unknown placeholders: {verison}" "title typo"
 
 run_release DRAFT=true PRERELEASE=true LATEST=false
 assert_contains "${LOG}" "--draft --prerelease --latest=false" "flags"
@@ -78,35 +77,35 @@ run_release LATEST=true
 assert_contains "${LOG}" "--notes-file ${body} --latest" "latest true"
 
 run_release LATEST=sometimes
-refuses "latest is 'sometimes'" "bad latest"
+refuses_release "latest is 'sometimes'" "bad latest"
 
 run_release DRAFT=yes
-refuses "draft is 'yes'" "bad boolean"
+refuses_release "draft is 'yes'" "bad boolean"
 
 run_release ASSETS=$'dist/*.tar.gz#Archive (tar.gz)\n\n  dist/*.zip  '
 assert_status 0 "${STATUS}" "assets: ${ERR}"
 assert_contains "${LOG}" "--notes-file ${body} dist/demo-1.5.0.tar.gz#Archive (tar.gz) dist/demo-1.5.0.zip" "asset arguments"
 
 run_release ASSETS='dist/*.whl'
-refuses "no file matches the asset 'dist/*.whl'" "missing asset"
+refuses_release "no file matches the asset 'dist/*.whl'" "missing asset"
 
 run_release BODY_FILE="${SCRATCH}/absent.md"
-refuses "body-file '${SCRATCH}/absent.md' does not exist" "missing body"
+refuses_release "body-file '${SCRATCH}/absent.md' does not exist" "missing body"
 
 run_release VERSION=v1.5
-refuses "version is 'v1.5'" "bad version"
+refuses_release "version is 'v1.5'" "bad version"
 
 TAGS=$'v1.5.0\n' run_release TAG_PREFIX=v
-refuses "tag v1.5.0 already exists" "existing tag"
+refuses_release "tag v1.5.0 already exists" "existing tag"
 
 run_release TAG_PREFIX=v GH_RELEASE_EXISTS=1
-refuses "a release named v1.5.0 already exists" "existing release"
+refuses_release "a release named v1.5.0 already exists" "existing release"
 
 run_release ROLLING=true DRAFT=true
-refuses "rolling and draft are both true" "rolling draft"
+refuses_release "rolling and draft are both true" "rolling draft"
 
 run_release ROLLING=true TARGET=main
-refuses "rolling needs target to be a full commit SHA" "rolling without SHA"
+refuses_release "rolling needs target to be a full commit SHA" "rolling without SHA"
 
 # Rolling: v1 exists and moves, v1.5 is new.
 TAGS=$'v1\n' run_release TAG_PREFIX=v ROLLING=true

@@ -40,8 +40,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go install mvdan.cc/sh/v3/cmd/shfmt@v3.14.1
-          printf '%s/bin\n' "$(go env GOPATH)" >>"${GITHUB_PATH}"
+          mkdir -p "${RUNNER_TEMP}/bin"
+          curl -fsSL -o "${RUNNER_TEMP}/bin/shfmt" \
+            https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64
+          chmod +x "${RUNNER_TEMP}/bin/shfmt"
+          printf '%s/bin\n' "${RUNNER_TEMP}" >>"${GITHUB_PATH}"
 
       # shfmt reads its indentation from .editorconfig.
       - name: Lint scripts

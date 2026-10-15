@@ -12,7 +12,6 @@ use warnings;
 
 my %allowed = map { $_ => 1 } grep { $_ ne '' } split /,/, ($ARGV[0] // '');
 my $text = do { local $/; <STDIN> };
-$text = '' unless defined $text;
 
 my $placeholder = qr/(?<!\$)\{([a-z][a-z0-9-]*)\}/;
 my (%unknown, %empty);

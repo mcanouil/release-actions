@@ -47,3 +47,36 @@ next_version() {
     ;;
   esac
 }
+
+# Prints the major part of VERSION: 1 for 1.5.0, 2026 for 2026.10.15-2.
+version_major() {
+  local core="${1%%-*}"
+  printf '%s\n' "${core%%.*}"
+}
+
+# Prints the major and minor parts of VERSION: 1.5 for 1.5.0.
+version_minor() {
+  local core="${1%%-*}"
+  printf '%s\n' "${core%.*}"
+}
+
+# Prints the highest tag of the current repository that is PREFIX followed by
+# X.Y.Z or X.Y.Z-N, without PREFIX, or 0.0.0 when there is none.
+latest_tag() {
+  local latest
+  latest="$(git tag --list | PREFIX="$1" perl -ne '
+    chomp;
+    next unless s/\A\Q$ENV{PREFIX}\E(?=[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9]+)?\z)//;
+    push @versions, $_;
+    END {
+      my @sorted = sort {
+        my @x = split /[.-]/, $a;
+        my @y = split /[.-]/, $b;
+        $x[3] //= 1;
+        $y[3] //= 1;
+        $x[0] <=> $y[0] || $x[1] <=> $y[1] || $x[2] <=> $y[2] || $x[3] <=> $y[3]
+      } @versions;
+      print $sorted[-1] if @sorted;
+    }')"
+  printf '%s\n' "${latest:-0.0.0}"
+}

@@ -40,3 +40,10 @@ multiline_output() {
     inside
   ' "$2"
 }
+
+# Checks that the last run (STATUS, ERR) failed with a message that contains
+# NEEDLE. LABEL names the case.
+refuses() {
+  assert_status 1 "${STATUS}" "$2 fails"
+  assert_contains "${ERR}" "$1" "$2 message"
+}

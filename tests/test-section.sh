@@ -63,3 +63,23 @@ assert_status 3 "${status}" "two Unreleased headings"
 status=0
 perl "${script}" unreleased "${SCRATCH}/missing.md" 2>/dev/null || status=$?
 assert_status 1 "${status}" "missing file"
+
+# Roll: the heading outside a fence becomes the release heading.
+cat >"${changelog}" <<'MD'
+# Changelog
+
+```markdown
+## Unreleased
+```
+
+## [Unreleased]
+
+- feat: X.
+MD
+HEADING='## [1.0.0] - 2026-10-15' perl "${script}" roll "${changelog}"
+assert_eq $'# Changelog\n\n```markdown\n## Unreleased\n```\n\n## [Unreleased]\n\n## [1.0.0] - 2026-10-15\n\n- feat: X.' \
+  "$(cat "${changelog}")" "roll skips the fence and keeps the bracket form"
+
+status=0
+env -u HEADING perl "${script}" roll "${changelog}" 2>/dev/null || status=$?
+assert_status 1 "${status}" "roll without HEADING"

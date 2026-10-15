@@ -24,7 +24,6 @@ my %placeholder = (
   date    => '[0-9]{4}-[0-9]{2}-[0-9]{2}',
   major   => '[0-9]+(?![.0-9])',
 );
-my %variable = (version => 'VERSION', date => 'DATE', major => 'MAJOR');
 
 my ($mode, $pattern, $file) = @ARGV;
 fail('usage: target.pl find|replace PATTERN FILE')
@@ -49,7 +48,6 @@ my $compiled = qr/$start$regex$end/m;
 open my $in, '<', $file or fail("cannot read $file: $!");
 my $text = do { local $/; <$in> };
 close $in;
-$text = '' unless defined $text;
 
 if ($mode eq 'find') {
   my ($version_index) = grep { $kinds[$_] eq 'version' } 0 .. $#kinds;
@@ -61,7 +59,7 @@ if ($mode eq 'find') {
 
 my %value;
 for my $kind (grep { $_ ne 'literal' } @kinds) {
-  my $name = $variable{$kind};
+  my $name = uc $kind;
   fail("$name is not set, so {$kind} has no value")
     unless defined $ENV{$name} && $ENV{$name} ne '';
   $value{$kind} = $ENV{$name};

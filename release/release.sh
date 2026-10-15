@@ -25,23 +25,16 @@ DRAFT="${DRAFT:-false}"
 PRERELEASE="${PRERELEASE:-false}"
 LATEST="${LATEST:-auto}"
 ROLLING="${ROLLING:-false}"
-RELEASE_DATE="${RELEASE_DATE:-}"
-if [[ -z "${RELEASE_DATE}" ]]; then
-  RELEASE_DATE="$(date -u +%Y-%m-%d)"
-fi
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 
 require_tools gh perl
 [[ "${VERSION}" =~ ${VERSION_REGEX} ]] || die "version is '${VERSION}'. Pass the version output of the bump action."
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
 [[ -n "${TARGET}" ]] || die "target is empty. Pass the commit to tag."
-[[ "${RELEASE_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "date is '${RELEASE_DATE}'. Use YYYY-MM-DD."
-for flag in DRAFT PRERELEASE ROLLING; do
-  case "${!flag}" in
-  true | false) ;;
-  *) die "$(tr '[:upper:]' '[:lower:]' <<<"${flag}") is '${!flag}'. Use true or false." ;;
-  esac
-done
+RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
+require_bool draft "${DRAFT}"
+require_bool prerelease "${PRERELEASE}"
+require_bool rolling "${ROLLING}"
 case "${LATEST}" in
 auto | true | false) ;;
 *) die "latest is '${LATEST}'. Use auto, true or false." ;;
@@ -57,13 +50,8 @@ if [[ "${ROLLING}" == "true" && ! "${TARGET}" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 tag="${TAG_PREFIX}${VERSION}"
-errors="$(temp_dir)/release-title.err"
-status=0
 title="$(printf '%s' "${TITLE}" | FILL_tag="${tag}" FILL_version="${VERSION}" FILL_date="${RELEASE_DATE}" \
-  perl "${LIB}/fill.pl" tag,version,date 2>"${errors}")" || status=$?
-if [[ ${status} -ne 0 ]]; then
-  die "title '${TITLE}' has unknown placeholders: $(cat "${errors}"). Use {tag}, {version} or {date}."
-fi
+  fill_template tag,version,date "title '${TITLE}'")"
 
 asset_args=()
 while IFS= read -r line; do
@@ -73,17 +61,13 @@ while IFS= read -r line; do
   glob="${line%%#*}"
   label=""
   if [[ "${line}" == *"#"* ]]; then
-    label="${line#*#}"
+    label="#${line#*#}"
   fi
   found=0
   while IFS= read -r path; do
     [[ -n "${path}" ]] || continue
     found=1
-    if [[ -n "${label}" ]]; then
-      asset_args+=("${path}#${label}")
-    else
-      asset_args+=("${path}")
-    fi
+    asset_args+=("${path}${label}")
   done < <(compgen -G "${glob}" || true)
   if [[ ${found} -eq 0 ]]; then
     die "no file matches the asset '${glob}'. Build it before this step, or remove it from assets."
@@ -112,8 +96,7 @@ gh "${args[@]}" ${asset_args[@]+"${asset_args[@]}"} >/dev/null
 
 rolling_tags=()
 if [[ "${ROLLING}" == "true" ]]; then
-  core="${VERSION%%-*}"
-  for ref in "${TAG_PREFIX}${core%%.*}" "${TAG_PREFIX}${core%.*}"; do
+  for ref in "${TAG_PREFIX}$(version_major "${VERSION}")" "${TAG_PREFIX}$(version_minor "${VERSION}")"; do
     if gh api "repos/${REPOSITORY}/git/ref/tags/${ref}" --silent >/dev/null 2>&1; then
       gh api --method PATCH "repos/${REPOSITORY}/git/refs/tags/${ref}" -f "sha=${TARGET}" -F force=true --silent ||
         die "release ${tag} exists, but ${ref} did not move. Move it by hand: git tag -f ${ref} ${TARGET} && git push --force origin ${ref}."

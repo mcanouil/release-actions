@@ -64,11 +64,6 @@ run_bump() {
   ERR="$(env GITHUB_OUTPUT="${OUT}" RELEASE_DATE=2026-10-15 "$@" "${script}" 2>&1 >/dev/null)" || STATUS=$?
 }
 
-refuses() {
-  assert_status 1 "${STATUS}" "$2 fails"
-  assert_contains "${ERR}" "$1" "$2 message"
-}
-
 tree_sum() {
   find . -type f -not -path './.git/*' -exec cksum {} + | LC_ALL=C sort
 }
@@ -315,6 +310,10 @@ run_bump BUMP=patch TARGETS="${TARGETS_ALL}"
 refuses "CHANGELOG.md does not exist" "missing changelog"
 
 # Inputs.
+fixture
+run_bump BUMP=patch TARGETS="${TARGETS_ALL}" CHANGELOG_HEADING='## {version} ({daet})'
+refuses "changelog-heading has unknown placeholders: {daet}" "heading typo"
+
 fixture
 run_bump BUMP= TARGETS="${TARGETS_ALL}"
 refuses "bump is empty" "empty bump"
