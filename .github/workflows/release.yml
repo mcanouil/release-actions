@@ -1,0 +1,119 @@
+name: Release
+
+# Bumps the version from the latest vX.Y.Z tag, pushes the bump to the default
+# branch as the GitHub App, and releases it with the actions of this repository
+# at that commit. Run by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        type: choice
+        description: "Version bump"
+        default: "minor"
+        options:
+          - "patch"
+          - "minor"
+          - "major"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Refuse to release anything but the default branch
+        if: ${{ github.ref_name != github.event.repository.default_branch }}
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          echo "::error::Releases are cut from ${DEFAULT_BRANCH}, not ${REF_NAME}."
+          exit 1
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Set up the Git user
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          user_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+      - name: Bump the version
+        id: bump
+        uses: ./bump
+        with:
+          bump: ${{ inputs.bump }}
+          version-source: tag
+          tag-prefix: v
+          targets: |
+            - file: CITATION.cff
+              pattern: '^version: {version}$'
+            - file: CITATION.cff
+              pattern: '^date-released: "{date}"$'
+            - file: README.md
+              pattern: 'mcanouil/release-actions/bump@v{major}'
+            - file: README.md
+              pattern: 'mcanouil/release-actions/notes@v{major}'
+            - file: README.md
+              pattern: 'mcanouil/release-actions/release@v{major}'
+
+      # The App is exempt from the pull request rule of the default branch, and
+      # [skip ci] keeps CI from running again on a tree it has checked.
+      - name: Push the version
+        id: push
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+          FILES: ${{ steps.bump.outputs.files }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${FILES}" | xargs git add
+          git commit -m "ci: release v${VERSION} [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "sha=$(git rev-parse HEAD)" >>"${GITHUB_OUTPUT}"
+
+      - name: Compose the release body
+        id: notes
+        uses: ./notes
+        with:
+          notes-file: ${{ steps.bump.outputs.notes-file }}
+          version: ${{ steps.bump.outputs.version }}
+          tag: v${{ steps.bump.outputs.version }}
+          target: ${{ steps.push.outputs.sha }}
+          generate-notes: true
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Create the release
+        uses: ./release
+        with:
+          version: ${{ steps.bump.outputs.version }}
+          tag-prefix: v
+          body-file: ${{ steps.notes.outputs.body-file }}
+          target: ${{ steps.push.outputs.sha }}
+          latest: true
+          rolling: true
+          token: ${{ steps.app-token.outputs.token }}
