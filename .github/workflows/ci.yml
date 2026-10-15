@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    if: ${{ github.event.pull_request.draft != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          # actionlint 1.7.12 bundles metadata for create-github-app-token@v3
+          # that predates `client-id`, which v3 declares and prefers over the
+          # deprecated `app-id`.
+          ./actionlint -color \
+            -ignore 'input "client-id" is not defined in action "actions/create-github-app-token@v3"' \
+            -ignore 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
+
+      - name: Install shfmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.14.1
+          printf '%s/bin\n' "$(go env GOPATH)" >>"${GITHUB_PATH}"
+
+      # shfmt reads its indentation from .editorconfig.
+      - name: Lint scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files '*.sh' | xargs shellcheck
+          git ls-files '*.sh' | xargs shfmt -d
+          git ls-files '*.pl' | xargs -r -n 1 perl -c
+
+  test:
+    name: Test (${{ matrix.os }})
+    if: ${{ github.event.pull_request.draft != true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run the tests
+        shell: bash
+        run: tests/run.sh
