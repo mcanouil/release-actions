@@ -39,7 +39,7 @@ On other runners, install `yq` v4 and `gh` before the first step.
     FILES: ${{ steps.bump.outputs.files }}
   run: |
     set -euo pipefail
-    printf '%s\n' "${FILES}" | xargs git add
+    printf '%s\n' "${FILES}" | git add --pathspec-from-file=-
     git commit -m "ci: release ${VERSION} [skip ci]"
     git push origin "HEAD:${GITHUB_REF_NAME}"
     echo "sha=$(git rev-parse HEAD)" >>"${GITHUB_OUTPUT}"
@@ -232,6 +232,7 @@ With `rolling: true`, `target` must be a full commit SHA.
 A draft release has no tag, so `rolling` and `draft` cannot both be `true`.
 `rolling` and `prerelease` cannot both be `true`, because callers that pin the rolling tags would then get the prerelease.
 `tag-prefix` can contain only letters, digits, dots, hyphens and underscores.
+A rolling tag does not move back: if a higher release already exists under `vX` or `vX.Y`, that tag stays, and the step writes a warning.
 
 If a ruleset protects the tags or the default branch, use a GitHub App token that the ruleset exempts.
 

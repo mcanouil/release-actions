@@ -48,7 +48,12 @@ while (my $raw = <$in>) {
   if (!$fence && $line =~ $heading) {
     $found++;
     $inside = 1;
-    $raw[-1] = "## $1\n\n$ENV{HEADING}\n" if $mode eq 'roll' && $found == 1;
+    if ($mode eq 'roll' && $found == 1) {
+      my $form = $1;
+      my ($eol) = $raw[-1] =~ /(\r?\n)\z/;
+      $eol //= "\n";
+      $raw[-1] = "## $form$eol$eol$ENV{HEADING}$eol";
+    }
     next;
   }
   if (!$fence && $line =~ /\A## /) {

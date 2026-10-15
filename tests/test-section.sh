@@ -83,3 +83,7 @@ assert_eq $'# Changelog\n\n```markdown\n## Unreleased\n```\n\n## [Unreleased]\n\
 status=0
 env -u HEADING perl "${script}" roll "${changelog}" 2>/dev/null || status=$?
 assert_status 1 "${status}" "roll without HEADING"
+
+printf '# Changelog\r\n\r\n## Unreleased\r\n\r\n- feat: X.\r\n' >"${changelog}"
+HEADING='## 1.0.0 (2026-10-15)' perl "${script}" roll "${changelog}"
+assert_eq "$(printf '# Changelog\r\n\r\n## Unreleased\r\n\r\n## 1.0.0 (2026-10-15)\r\n\r\n- feat: X.\r\n' | od -c)" "$(od -c <"${changelog}")" "roll keeps CRLF"

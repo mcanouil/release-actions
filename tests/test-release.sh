@@ -19,6 +19,12 @@ case "$*" in
   tag="${tag%% *}"
   grep -qxF "${tag}" "${GH_TAGS}"
   ;;
+"api repos/o/r/git/matching-refs/tags/"*)
+  args="$*"
+  prefix="${args#api repos/o/r/git/matching-refs/tags/}"
+  prefix="${prefix%% *}"
+  { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"
+  ;;
 "release view"*"--json"*)
   printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'
   ;;
@@ -123,3 +129,13 @@ assert_contains "${LOG}" "--notes-file ${body} dist/demo-1.5.0.zip#Archive (zip)
 
 run_release TAG_PREFIX='v/'
 refuses_release "tag-prefix is 'v/'" "bad tag prefix"
+
+# Rolling never moves a tag back: v1 already serves 1.9.0.
+TAGS=$'v1\nv1.9.0\nv1.5\n' run_release TAG_PREFIX=v ROLLING=true
+assert_status 0 "${STATUS}" "backport: ${ERR}"
+assert_contains "${ERR}" "v1 stays on v1.9.0" "backport warning"
+if grep -q 'refs/tags/v1 ' "${GH_LOG}"; then
+  printf '  backport moved v1\n' >&2
+  exit 1
+fi
+assert_contains "${LOG}" "api --method PATCH repos/o/r/git/refs/tags/v1.5 -f sha=${sha} -F force=true --silent" "backport moves v1.5"

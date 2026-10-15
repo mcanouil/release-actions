@@ -296,7 +296,7 @@ fixture
 printf '## Unreleased  \r\n\r\n- feat: X.\r\n' >CHANGELOG.md
 run_bump BUMP=patch TARGETS="${TARGETS_ALL}"
 assert_status 0 "${STATUS}" "CRLF changelog: ${ERR}"
-assert_contains "$(cat CHANGELOG.md)" $'## Unreleased\n\n## 1.4.3 (2026-10-15)' "CRLF roll"
+assert_contains "$(cat CHANGELOG.md)" $'## Unreleased\r\n\r\n## 1.4.3 (2026-10-15)\r\n' "CRLF roll keeps CRLF"
 
 fixture
 rm CHANGELOG.md

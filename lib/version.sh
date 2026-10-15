@@ -60,11 +60,10 @@ version_minor() {
   printf '%s\n' "${core%.*}"
 }
 
-# Prints the highest tag of the current repository that is PREFIX followed by
-# X.Y.Z or X.Y.Z-N, without PREFIX, or 0.0.0 when there is none.
-latest_tag() {
-  local latest
-  latest="$(git tag --list | PREFIX="$1" perl -ne '
+# Reads tag names on standard input and prints the highest one that is PREFIX
+# followed by X.Y.Z or X.Y.Z-N, without PREFIX. Prints nothing when none is.
+highest_version() {
+  PREFIX="$1" perl -ne '
     chomp;
     next unless s/\A\Q$ENV{PREFIX}\E(?=[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9]+)?\z)//;
     push @versions, $_;
@@ -76,7 +75,14 @@ latest_tag() {
         $y[3] //= 1;
         $x[0] <=> $y[0] || $x[1] <=> $y[1] || $x[2] <=> $y[2] || $x[3] <=> $y[3]
       } @versions;
-      print $sorted[-1] if @sorted;
-    }')"
+      print "$sorted[-1]\n" if @sorted;
+    }'
+}
+
+# Prints the highest PREFIX X.Y.Z or X.Y.Z-N tag of the current repository,
+# without PREFIX, or 0.0.0 when there is none.
+latest_tag() {
+  local latest
+  latest="$(git tag --list | highest_version "$1")"
   printf '%s\n' "${latest:-0.0.0}"
 }

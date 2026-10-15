@@ -11,6 +11,14 @@ die() {
   exit 1
 }
 
+warn() {
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    printf '::warning::%s\n' "$*" >&2
+  else
+    printf '%s: %s\n' "${SCRIPT_NAME:-release-actions}" "$*" >&2
+  fi
+}
+
 require_tools() {
   local tool
   for tool in "$@"; do

@@ -91,7 +91,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s\n' "${FILES}" | xargs git add
+          printf '%s\n' "${FILES}" | git add --pathspec-from-file=-
           git commit -m "ci: release v${VERSION} [skip ci]"
           git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "sha=$(git rev-parse HEAD)" >>"${GITHUB_OUTPUT}"
