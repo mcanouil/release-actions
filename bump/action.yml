@@ -1,0 +1,75 @@
+name: Bump version
+description: Write the next version to target files and roll the Unreleased section of the changelog.
+
+inputs:
+  bump:
+    description: "patch, minor, major, calver, or an explicit version such as 1.2.3."
+    required: true
+  targets:
+    description: "YAML list of {file, pattern, source?, required?}. Patterns use {version}, {date} and {major}; a leading ^ and a trailing $ anchor them to a line."
+    required: false
+    default: ""
+  version-source:
+    description: "Where the current version comes from: target or tag."
+    required: false
+    default: "target"
+  tag-prefix:
+    description: "Prefix of the version tags, such as v, for version-source: tag."
+    required: false
+    default: ""
+  changelog:
+    description: "Path of the changelog. An empty string turns off the changelog roll."
+    required: false
+    default: "CHANGELOG.md"
+  changelog-heading:
+    description: "Heading that the Unreleased section becomes."
+    required: false
+    default: "## {version} ({date})"
+  allow-empty:
+    description: "Release even when the Unreleased section is empty."
+    required: false
+    default: "false"
+  date:
+    description: "Release date, YYYY-MM-DD. Default: today in UTC."
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: "The new version, without a tag prefix."
+    value: ${{ steps.bump.outputs.version }}
+  previous:
+    description: "The version before the bump."
+    value: ${{ steps.bump.outputs.previous }}
+  major:
+    description: "The major part of the new version."
+    value: ${{ steps.bump.outputs.major }}
+  minor:
+    description: "The major and minor parts of the new version, such as 1.5."
+    value: ${{ steps.bump.outputs.minor }}
+  date:
+    description: "The release date."
+    value: ${{ steps.bump.outputs.date }}
+  notes-file:
+    description: "Path of a file that holds the changelog section of the release."
+    value: ${{ steps.bump.outputs.notes-file }}
+  files:
+    description: "Changed files, one per line."
+    value: ${{ steps.bump.outputs.files }}
+
+runs:
+  using: composite
+  steps:
+    - name: Bump the version
+      id: bump
+      shell: bash
+      env:
+        BUMP: ${{ inputs.bump }}
+        TARGETS: ${{ inputs.targets }}
+        VERSION_SOURCE: ${{ inputs.version-source }}
+        TAG_PREFIX: ${{ inputs.tag-prefix }}
+        CHANGELOG: ${{ inputs.changelog }}
+        CHANGELOG_HEADING: ${{ inputs.changelog-heading }}
+        ALLOW_EMPTY: ${{ inputs.allow-empty }}
+        RELEASE_DATE: ${{ inputs.date }}
+      run: '"${GITHUB_ACTION_PATH}/bump.sh"'
