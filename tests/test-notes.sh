@@ -13,7 +13,10 @@ cat >"${SCRATCH}/bin/gh" <<'EOF'
 printf '%s\n' "$*" >>"${GH_LOG}"
 case "$*" in
 "api repos/o/r/releases/latest"*)
-  [[ -n "${GH_LATEST:-}" ]] || exit 1
+  if [[ -z "${GH_LATEST:-}" ]]; then
+    printf '{"message":"Not Found","status":"404"}\n'
+    exit 1
+  fi
   printf '%s\n' "${GH_LATEST}"
   ;;
 "api --method POST repos/o/r/releases/generate-notes"*)
