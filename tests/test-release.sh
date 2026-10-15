@@ -139,3 +139,6 @@ if grep -q 'refs/tags/v1 ' "${GH_LOG}"; then
   exit 1
 fi
 assert_contains "${LOG}" "api --method PATCH repos/o/r/git/refs/tags/v1.5 -f sha=${sha} -F force=true --silent" "backport moves v1.5"
+
+run_release VERSION=1.5.0-rc.1 ROLLING=true
+refuses_release "rolling needs a release version" "rolling with a text suffix"

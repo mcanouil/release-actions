@@ -231,6 +231,7 @@ Each asset glob must match at least one file.
 With `rolling: true`, `target` must be a full commit SHA.
 A draft release has no tag, so `rolling` and `draft` cannot both be `true`.
 `rolling` and `prerelease` cannot both be `true`, because callers that pin the rolling tags would then get the prerelease.
+For the same reason, `rolling` needs a release version, such as `1.2.3` or `2026.10.15-2`, and refuses a version such as `1.2.3-rc.1`.
 `tag-prefix` can contain only letters, digits, dots, hyphens and underscores.
 A rolling tag does not move back: if a higher release already exists under `vX` or `vX.Y`, that tag stays, and the step writes a warning.
 

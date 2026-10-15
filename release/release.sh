@@ -46,6 +46,9 @@ fi
 if [[ "${ROLLING}" == "true" && "${PRERELEASE}" == "true" ]]; then
   die "rolling and prerelease are both true. Callers that pin the rolling tags would get the prerelease."
 fi
+if [[ "${ROLLING}" == "true" && ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
+  die "rolling needs a release version such as 1.2.3 or 2026.10.15-2; got '${VERSION}'. Release it without rolling."
+fi
 if [[ "${ROLLING}" == "true" && "${DRAFT}" == "true" ]]; then
   die "rolling and draft are both true. A draft has no tag yet, so move the rolling tags when the draft is published."
 fi

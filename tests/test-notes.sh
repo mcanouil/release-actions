@@ -159,3 +159,11 @@ if [[ "${first}" == "${second}" ]]; then
   exit 1
 fi
 assert_eq $'## Changelog\n\n- feat: Next thing. (#7)' "$(cat "${first}")" "first body kept"
+
+# The limit counts characters, not bytes, whatever the locale.
+perl -e 'binmode STDOUT, ":utf8"; print "\x{e9}" x 62501' >"${SCRATCH}/accents.md"
+out="${SCRATCH}/out"
+: >"${out}"
+status=0
+LC_ALL=C GITHUB_OUTPUT="${out}" RELEASE_DATE=2026-10-15 NOTES_FILE="${SCRATCH}/accents.md" SECTION_HEADING='' "${script}" 2>/dev/null || status=$?
+assert_status 0 "${status}" "multi-byte body under the limit"
