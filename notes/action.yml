@@ -1,0 +1,78 @@
+name: Release notes
+description: Compose a release body from a header template, the changelog section and the notes that GitHub generates.
+
+inputs:
+  notes-file:
+    description: "File that holds the changelog section, usually the notes-file output of bump."
+    required: false
+    default: ""
+  version:
+    description: "Value of {version} in the header. Without notes-file, also the version whose section is read from the changelog."
+    required: false
+    default: ""
+  changelog:
+    description: "Path of the changelog, read only without notes-file."
+    required: false
+    default: "CHANGELOG.md"
+  changelog-heading:
+    description: "Form of the version headings, read only without notes-file."
+    required: false
+    default: "## {version} ({date})"
+  header:
+    description: "Template file put first. Placeholders: {version}, {tag}, {date}, {repository}."
+    required: false
+    default: ""
+  section-heading:
+    description: "Heading above the changelog section. An empty string omits it."
+    required: false
+    default: "## Changelog"
+  date:
+    description: "Value of {date}, YYYY-MM-DD. Default: today in UTC."
+    required: false
+    default: ""
+  generate-notes:
+    description: "Append the notes that GitHub generates."
+    required: false
+    default: "false"
+  tag:
+    description: "Value of {tag}, and the tag for the generated notes."
+    required: false
+    default: ""
+  target:
+    description: "Commit for the generated notes. Default: github.sha."
+    required: false
+    default: ""
+  previous-tag:
+    description: "Start of the range for the generated notes. Default: the latest release."
+    required: false
+    default: ""
+  token:
+    description: "Token for the GitHub API."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  body-file:
+    description: "Path of the composed body."
+    value: ${{ steps.notes.outputs.body-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compose the release body
+      id: notes
+      shell: bash
+      env:
+        NOTES_FILE: ${{ inputs.notes-file }}
+        VERSION: ${{ inputs.version }}
+        CHANGELOG: ${{ inputs.changelog }}
+        CHANGELOG_HEADING: ${{ inputs.changelog-heading }}
+        HEADER: ${{ inputs.header }}
+        SECTION_HEADING: ${{ inputs.section-heading }}
+        RELEASE_DATE: ${{ inputs.date }}
+        GENERATE_NOTES: ${{ inputs.generate-notes }}
+        TAG: ${{ inputs.tag }}
+        TARGET: ${{ inputs.target }}
+        PREVIOUS_TAG: ${{ inputs.previous-tag }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: '"${GITHUB_ACTION_PATH}/notes.sh"'
