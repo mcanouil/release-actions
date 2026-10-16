@@ -53,6 +53,11 @@ refuses() {
 # as a token or network error would, GH_RELEASE_DOWN fails only the release
 # lookup, and GH_LOG, when set, records each call. Every App bot has the user
 # id 123, and every token belongs to octo, with the user id 456.
+# For pull requests: GH_STALE_PR is the open pull request of the head branch,
+# GH_LABELS a file of label names, GH_MERGE_FAILS fails gh pr merge, and each
+# gh pr view prints the next line of the file GH_PR_SCRIPT, repeating the last
+# one. A line "!fail" fails that call, and {branch-sha} stands for the commit
+# of release/v1.5.0 in the bare repository GH_ORIGIN.
 install_fake_gh() {
   mkdir -p "${SCRATCH}/bin"
   export PATH="${SCRATCH}/bin:${PATH}"
@@ -97,6 +102,32 @@ case "$*" in
   [[ -n "${GH_RELEASE_EXISTS:-}" ]] && exit 0
   echo "release not found" >&2
   exit 1
+  ;;
+"pr list"*)
+  [[ -z "${GH_STALE_PR:-}" ]] || echo "${GH_STALE_PR}"
+  ;;
+"pr create"*)
+  echo "Creating pull request"
+  echo "https://github.com/o/r/pull/7"
+  ;;
+"pr view"*)
+  pos=$(($(cat "${GH_PR_SCRIPT}.pos" 2>/dev/null || echo 0) + 1))
+  total=$(wc -l <"${GH_PR_SCRIPT}")
+  [[ ${pos} -le ${total} ]] || pos=${total}
+  echo "${pos}" >"${GH_PR_SCRIPT}.pos"
+  line="$(sed -n "${pos}p" "${GH_PR_SCRIPT}")"
+  [[ "${line}" != "!fail" ]] || exit 1
+  if [[ "${line}" == *"{branch-sha}"* ]]; then
+    sha="$(git --git-dir="${GH_ORIGIN}" rev-parse refs/heads/release/v1.5.0)"
+    line="${line/\{branch-sha\}/${sha}}"
+  fi
+  echo "${line}"
+  ;;
+"pr merge"*)
+  [[ -z "${GH_MERGE_FAILS:-}" ]] || exit 1
+  ;;
+"label list"*)
+  [[ -z "${GH_LABELS:-}" ]] || cat "${GH_LABELS}"
   ;;
 *) exit 0 ;;
 esac

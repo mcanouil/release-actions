@@ -17,6 +17,11 @@ FILES="${FILES:-}"
 VERSION="${VERSION:-}"
 TAG_PREFIX="${TAG_PREFIX:-}"
 BRANCH="${GITHUB_REF_NAME:-}"
+REPOSITORY="${GITHUB_REPOSITORY:-}"
+MERGE_TIMEOUT="${MERGE_TIMEOUT:-600}"
+POLL_INTERVAL="${LAND_POLL_INTERVAL:-10}"
+BLOCKED_AFTER="${LAND_BLOCKED_AFTER:-120}"
+LABEL='Type: CI/CD :robot:'
 
 require_tools git
 case "${MODE}" in
@@ -26,6 +31,11 @@ esac
 [[ "${VERSION}" =~ ${VERSION_REGEX} ]] || die "version is '${VERSION}'. Pass the version output of the bump action."
 [[ "${TAG_PREFIX}" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '${TAG_PREFIX}'. Use letters, digits, dots, hyphens or underscores."
 [[ -n "${BRANCH}" ]] || die "GITHUB_REF_NAME is not set. Run land in a workflow on a branch."
+[[ "${MERGE_TIMEOUT}" =~ ^[1-9][0-9]*$ ]] || die "merge-timeout is '${MERGE_TIMEOUT}'. Use a number of seconds above 0."
+if [[ "${MODE}" == "pull-request" ]]; then
+  require_tools gh
+  [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
+fi
 
 files=()
 while IFS= read -r file; do
@@ -57,9 +67,101 @@ land_push() {
   git rev-parse HEAD
 }
 
+# Says what to do when the bump is on the branch but the run cannot go on.
+die_landed() {
+  die "$1 ${BRANCH} holds the bump of ${tag} with no release: create the release by hand on the merge commit, or revert it with a pull request and dispatch the workflow again."
+}
+
+# Opens the pull request of the bump and prints its URL. A pull request left
+# open by an earlier run would make gh pr create fail, so it is closed first.
+open_pull_request() {
+  local head="$1" stale labels=()
+  if git ls-remote --exit-code --heads origin "${head}" >/dev/null 2>&1; then
+    stale="$(gh pr list --repo "${REPOSITORY}" --head "${head}" --state open --json number --jq '.[0].number // empty')" ||
+      die "could not list the pull requests of ${head}. Check that the token can read ${REPOSITORY}."
+    if [[ -n "${stale}" ]]; then
+      warn "closing the pull request #${stale} that an earlier run left open."
+      gh pr close "${stale}" --repo "${REPOSITORY}" >&2
+    fi
+  fi
+  git checkout -q -B "${head}"
+  git commit -q -m "ci: release ${tag}"
+  git push -q --force origin "HEAD:refs/heads/${head}" ||
+    die "the token could not push ${head}. Check that it has contents: write on ${REPOSITORY}."
+  if gh label list --repo "${REPOSITORY}" --limit 1000 --json name --jq '.[].name' | grep -qxF "${LABEL}"; then
+    labels=(--label "${LABEL}")
+  fi
+  # gh prints the pull request URL as the last line of its output.
+  gh pr create --repo "${REPOSITORY}" --base "${BRANCH}" --head "${head}" \
+    --title "ci: release ${tag}" --body "Automated release of ${tag}." \
+    ${labels[@]+"${labels[@]}"} | tail -n 1
+}
+
+land_pull_request() {
+  local deadline=$((SECONDS + MERGE_TIMEOUT)) blocked_after=$((SECONDS + BLOCKED_AFTER))
+  local url info mergeable="UNKNOWN" state="" sha="" merge_state="" review="" checks=""
+  local merge_args=(--repo "${REPOSITORY}" --squash --delete-branch)
+
+  url="$(open_pull_request "release/${tag}")"
+  [[ -n "${url}" ]] || die "gh pr create printed no URL for release/${tag}."
+
+  while [[ "${mergeable}" == "UNKNOWN" ]]; do
+    if info="$(gh pr view "${url}" --repo "${REPOSITORY}" --json mergeable,mergeStateStatus \
+      --jq '"\(.mergeable)|\(.mergeStateStatus)"')"; then
+      mergeable="${info%%|*}"
+      merge_state="${info#*|}"
+    fi
+    if [[ "${mergeable}" == "UNKNOWN" ]]; then
+      [[ ${SECONDS} -lt ${deadline} ]] || die "GitHub did not say whether ${url} can merge within ${MERGE_TIMEOUT}s. Raise merge-timeout, or merge it by hand and create the release."
+      sleep "${POLL_INTERVAL}"
+    fi
+  done
+  [[ "${mergeable}" == "MERGEABLE" ]] ||
+    die "${url} is ${mergeable}, so the bump cannot be merged. Close it, bring ${BRANCH} back to a state the bump applies to, and dispatch the workflow again."
+
+  # A pull request that nothing blocks merges at once; enabling auto-merge on
+  # it would fail with "Pull request is in clean status".
+  case "${merge_state}" in
+  CLEAN | HAS_HOOKS | UNSTABLE) ;;
+  *) merge_args+=(--auto) ;;
+  esac
+  # gh can fail after the merge has landed, so the state decides.
+  gh pr merge "${url}" "${merge_args[@]}" >&2 ||
+    warn "gh pr merge failed; checking whether ${url} merged."
+
+  # Every field comes from one response, so they describe one instant.
+  while :; do
+    info="$(gh pr view "${url}" --repo "${REPOSITORY}" \
+      --json state,mergeCommit,mergeStateStatus,reviewDecision,statusCheckRollup \
+      --jq '[.state, (.mergeCommit.oid // ""), (.mergeStateStatus // ""), (.reviewDecision // ""), (.statusCheckRollup | length)] | map(tostring) | join("|")')" || info=""
+    if [[ -n "${info}" ]]; then
+      IFS='|' read -r state sha merge_state review checks <<<"${info}"
+    fi
+    case "${state}" in
+    MERGED) [[ -z "${sha}" ]] || break ;;
+    CLOSED) die "${url} was closed without merging. Dispatch the workflow again to open a new one." ;;
+    esac
+    # A push by the default token triggers no workflow, so a branch that
+    # requires checks waits for checks that never start.
+    if [[ ${SECONDS} -ge ${blocked_after} && "${merge_state}" == "BLOCKED" && "${checks}" == "0" && "${review}" != "REVIEW_REQUIRED" ]]; then
+      die "${url} is blocked and no check runs against it. The branch requires status checks, and a push by the default token starts none: use an App token, or a token from the token input."
+    fi
+    if [[ ${SECONDS} -ge ${deadline} ]]; then
+      if [[ "${state}" == "MERGED" ]]; then
+        die_landed "${url} merged but reported no merge commit."
+      fi
+      die "${url} did not merge within ${MERGE_TIMEOUT}s. Raise merge-timeout if the checks of ${BRANCH} take longer, or merge it by hand and create the release."
+    fi
+    sleep "${POLL_INTERVAL}"
+  done
+
+  git fetch -q origin "${sha}" || die_landed "could not fetch the merge commit ${sha} of ${url}."
+  printf '%s\n' "${sha}"
+}
+
 case "${MODE}" in
 push) sha="$(land_push)" ;;
-pull-request) die "mode pull-request is not implemented." ;;
+pull-request) sha="$(land_pull_request)" ;;
 esac
 
 git checkout -q --detach "${sha}"

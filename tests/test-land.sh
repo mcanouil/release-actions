@@ -102,3 +102,119 @@ git -C "${SCRATCH}/seed" push -q "${GH_ORIGIN}" main
 run_land
 refuses "bypass list" "push refused"
 assert_contains "${ERR}" "pull-request" "push refused hint"
+
+# Writes the answers of the fake gh pr view, one per argument, in order.
+pr_script() {
+  export GH_PR_SCRIPT="${SCRATCH}/pr-script"
+  printf '%s\n' "$@" >"${GH_PR_SCRIPT}"
+  rm -f "${GH_PR_SCRIPT}.pos"
+}
+
+# Runs land.sh in pull-request mode with the VAR=value arguments. Sets STATUS,
+# ERR, OUT and LOG.
+run_pr() {
+  run_land MODE=pull-request LAND_POLL_INTERVAL=0 "$@"
+  LOG="$(cat "${GH_LOG}")"
+}
+
+branch_sha() {
+  git -C "${GH_ORIGIN}" rev-parse refs/heads/release/v1.5.0
+}
+
+assert_detached_at() {
+  assert_eq "$1" "$(output_value sha "${OUT}")" "$2 sha"
+  assert_eq "$1" "$(git rev-parse HEAD)" "$2 HEAD"
+}
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr
+assert_status 0 "${STATUS}" "direct merge: ${ERR}"
+assert_contains "${LOG}" "pr create --repo o/r --base main --head release/v1.5.0 --title ci: release v1.5.0 --body Automated release of v1.5.0." "pull request"
+assert_contains "${LOG}" "pr merge https://github.com/o/r/pull/7 --repo o/r --squash --delete-branch" "direct merge call"
+if [[ "${LOG}" == *"--auto"* || "${LOG}" == *"--label"* ]]; then
+  printf '  direct merge: unexpected --auto or --label in [%s]\n' "${LOG}" >&2
+  exit 1
+fi
+assert_eq "ci: release v1.5.0" "$(git -C "${GH_ORIGIN}" log -1 --format=%s release/v1.5.0)" "pull request commit"
+assert_detached_at "$(branch_sha)" "direct merge"
+
+fixture
+pr_script 'MERGEABLE|BLOCKED' 'MERGED|{branch-sha}|CLEAN||1'
+run_pr
+assert_status 0 "${STATUS}" "auto-merge: ${ERR}"
+assert_contains "${LOG}" "--squash --delete-branch --auto" "auto-merge call"
+
+fixture
+pr_script 'UNKNOWN|UNKNOWN' 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr
+assert_status 0 "${STATUS}" "unknown mergeability: ${ERR}"
+
+fixture
+pr_script 'CONFLICTING|DIRTY'
+run_pr
+refuses "cannot be merged" "conflicting"
+
+fixture
+printf 'bug\nType: CI/CD :robot:\n' >"${SCRATCH}/labels"
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr GH_LABELS="${SCRATCH}/labels"
+assert_status 0 "${STATUS}" "label: ${ERR}"
+assert_contains "${LOG}" "--label Type: CI/CD :robot:" "label"
+
+fixture
+git push -q origin HEAD:refs/heads/release/v1.5.0
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr GH_STALE_PR=3
+assert_status 0 "${STATUS}" "stale pull request: ${ERR}"
+assert_contains "${LOG}" "pr close 3 --repo o/r" "stale pull request closed"
+assert_eq "ci: release v1.5.0" "$(git -C "${GH_ORIGIN}" log -1 --format=%s release/v1.5.0)" "stale branch replaced"
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr GH_MERGE_FAILS=1
+assert_status 0 "${STATUS}" "merge failed but landed: ${ERR}"
+assert_contains "${ERR}" "gh pr merge failed" "merge failed warning"
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED||CLEAN||0' '!fail' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr
+assert_status 0 "${STATUS}" "late merge commit and transient error: ${ERR}"
+assert_detached_at "$(branch_sha)" "late merge commit"
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'CLOSED||CLEAN||0'
+run_pr
+refuses "closed without merging" "closed"
+
+fixture
+pr_script 'MERGEABLE|BLOCKED' 'OPEN||BLOCKED||0'
+run_pr LAND_BLOCKED_AFTER=0
+refuses "App token" "blocked with no checks"
+
+fixture
+pr_script 'MERGEABLE|BLOCKED' 'OPEN||BLOCKED|REVIEW_REQUIRED|0'
+run_pr LAND_BLOCKED_AFTER=0 MERGE_TIMEOUT=1
+refuses "merge-timeout" "blocked by a review"
+if [[ "${ERR}" == *"App token"* ]]; then
+  printf '  blocked by a review: blamed the token\n' >&2
+  exit 1
+fi
+
+fixture
+pr_script 'MERGEABLE|BLOCKED' 'OPEN||BLOCKED||2'
+run_pr MERGE_TIMEOUT=1
+refuses "merge-timeout" "timeout"
+assert_contains "${ERR}" "https://github.com/o/r/pull/7" "timeout names the pull request"
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED||CLEAN||0'
+run_pr MERGE_TIMEOUT=1
+refuses "create the release by hand" "merged with no merge commit"
+
+fixture
+for timeout in abc 0; do
+  run_pr MERGE_TIMEOUT="${timeout}"
+  refuses_landing "merge-timeout" "merge-timeout ${timeout}"
+  assert_eq "" "${LOG}" "merge-timeout ${timeout} calls no gh"
+done
