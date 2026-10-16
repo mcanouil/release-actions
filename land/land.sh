@@ -70,7 +70,7 @@ land_push() {
 
 # Says what to do when the bump is on the branch but the run cannot go on.
 die_landed() {
-  die "$1 ${BRANCH} holds the bump of ${tag} with no release: create the release by hand on the merge commit, or revert it with a pull request and dispatch the workflow again."
+  die "$1 ${BRANCH} holds the bump of ${tag} with no release: create the release by hand on the landed commit, or revert it with a pull request and dispatch the workflow again."
 }
 
 # Opens the pull request of the bump and prints its URL. A pull request left
@@ -174,5 +174,5 @@ push) sha="$(land_push)" ;;
 pull-request) sha="$(land_pull_request)" ;;
 esac
 
-git checkout -q --detach "${sha}"
+git checkout -q --detach "${sha}" || die_landed "could not check out ${sha}."
 set_output sha "${sha}"

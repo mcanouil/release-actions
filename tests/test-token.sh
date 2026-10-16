@@ -42,6 +42,10 @@ assert_status 0 "${STATUS}" "id without key: ${ERR}"
 assert_eq default "$(output_value source "${OUT}")" "id without key source"
 assert_contains "${ERR}" "app-key" "id without key, no token warning"
 
+run_script "${resolve}" APP_KEY=key PROVIDED_TOKEN=pat
+assert_eq token "$(output_value source "${OUT}")" "key without id source"
+assert_contains "${ERR}" "app-id" "key without id warning"
+
 run_script "${resolve}" PROVIDED_TOKEN=pat
 assert_eq token "$(output_value source "${OUT}")" "token source"
 
@@ -54,7 +58,7 @@ run_script "${identity}" SOURCE=app APP_SLUG=demo-app GH_TOKEN=t
 assert_status 0 "${STATUS}" "app identity: ${ERR}"
 assert_identity 'demo-app[bot]' '123+demo-app[bot]@users.noreply.github.com' "app identity"
 assert_contains "$(cat "${GH_LOG}")" "api /users/demo-app%5Bbot%5D" "app lookup"
-assert_eq 'demo-app[bot]' "$(output_value user-name "${OUT}")" "app user-name output"
+assert_eq "" "$(cat "${OUT}")" "identity writes no output"
 
 run_script "${identity}" SOURCE=token GH_TOKEN=t
 assert_status 0 "${STATUS}" "token identity: ${ERR}"

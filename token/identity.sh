@@ -42,5 +42,3 @@ esac
 git config --global user.name "${name}"
 git config --global user.email "${email}"
 printf 'Git identity: %s <%s>\n' "${name}" "${email}"
-set_output user-name "${name}"
-set_output user-email "${email}"

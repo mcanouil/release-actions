@@ -20,6 +20,9 @@ else
   if [[ -n "${APP_ID}" ]]; then
     warn "app-id is set but app-key is empty, so the App is not used. Pass app-key to commit as the App."
   fi
+  if [[ -n "${APP_KEY}" ]]; then
+    warn "app-key is set but app-id is empty, so the App is not used. Pass app-id to commit as the App."
+  fi
   if [[ -n "${PROVIDED_TOKEN}" ]]; then
     source=token
   else

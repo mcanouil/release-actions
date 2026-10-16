@@ -278,11 +278,15 @@ The next steps, for example a build, use the released files.
 | `version` | (required) | The version, usually the `version` output of `bump`. |
 | `tag-prefix` | `''` | Prefix of the release name in the commit message and the branch. |
 | `merge-timeout` | `600` | Seconds to wait for the pull request to merge. |
-| `token` | `github.token` | Token with `contents: write`, and `pull-requests: write` for `pull-request`. |
+| `token` | `github.token` | Token for the GitHub API in `pull-request` mode, with `contents: write` and `pull-requests: write`. |
 
 | Output | Description |
 | --- | --- |
 | `sha` | The commit on the branch that contains the bump. |
+
+`land` pushes with the credentials that `actions/checkout` keeps, in both modes.
+Thus the token of the checkout decides if the push is accepted.
+Give the same token to `actions/checkout` and to `land`.
 
 `land` commits only the paths in `files`.
 If the workflow changes other files, add their paths to `files`.
@@ -291,6 +295,7 @@ If the files have no change, the step stops: the bump can already be on the bran
 ### Modes and tokens
 
 The rules of the branch decide which token can land the bump in each mode.
+The token in this table is the token of `actions/checkout`.
 
 | Mode and branch | App on the bypass list | Your token | Default token |
 | --- | --- | --- | --- |

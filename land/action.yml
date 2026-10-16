@@ -20,7 +20,7 @@ inputs:
     required: false
     default: "600"
   token:
-    description: "Token with contents: write, and pull-requests: write for pull-request."
+    description: "Token for the GitHub API, with contents: write and pull-requests: write. Only pull-request uses it: git pushes with the credentials of actions/checkout."
     required: false
     default: ${{ github.token }}
 

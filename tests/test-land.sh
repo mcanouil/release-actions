@@ -9,6 +9,14 @@ export GIT_CONFIG_GLOBAL="${SCRATCH}/gitconfig" GH_ORIGIN="${SCRATCH}/origin.git
 : >"${GIT_CONFIG_GLOBAL}"
 install_fake_gh
 
+# Commits the staged changes of SCRATCH/seed as another contributor, with the
+# git commit arguments, and pushes them to main of the bare origin.
+seed_commit() {
+  git -C "${SCRATCH}/seed" -c user.name=seed -c user.email=seed@example.com -c commit.gpgSign=false \
+    commit -q "$@"
+  git -C "${SCRATCH}/seed" push -q "${GH_ORIGIN}" main
+}
+
 # Writes a bare origin with one commit on main, clones it to SCRATCH/work with
 # a test identity unless the first argument is "anonymous", moves into the
 # clone, and changes CITATION.cff there.
@@ -19,8 +27,7 @@ fixture() {
   git init -q -b main seed
   printf 'version: 1.4.2\n' >seed/CITATION.cff
   git -C seed add CITATION.cff
-  git -C seed -c user.name=seed -c user.email=seed@example.com -c commit.gpgSign=false commit -q -m init
-  git -C seed push -q "${GH_ORIGIN}" main
+  seed_commit -m init
   git clone -q "${GH_ORIGIN}" work
   cd work
   git config commit.gpgSign false
@@ -96,9 +103,7 @@ assert_eq "41898282+github-actions[bot]@users.noreply.github.com" \
   "$(git -C "${GH_ORIGIN}" log -1 --format=%ae main)" "anonymous email"
 
 fixture
-git -C "${SCRATCH}/seed" -c user.name=seed -c user.email=seed@example.com -c commit.gpgSign=false \
-  commit -q --allow-empty -m moved
-git -C "${SCRATCH}/seed" push -q "${GH_ORIGIN}" main
+seed_commit --allow-empty -m moved
 run_land
 refuses "bypass list" "push refused"
 assert_contains "${ERR}" "pull-request" "push refused hint"
@@ -233,3 +238,18 @@ pr_script 'MERGEABLE|BLOCKED' 'OPEN||BLOCKED||1'
 run_pr GH_MERGE_FAILS=1 LAND_MERGE_GRACE=0
 refuses "gh pr merge failed" "merge refused"
 assert_contains "${ERR}" "Auto-merge is not allowed" "merge refused keeps the gh error"
+
+fixture
+printf 'seed\n' >"${SCRATCH}/seed/extra.txt"
+git -C "${SCRATCH}/seed" add extra.txt
+seed_commit -m extra
+printf 'merged\n' >"${SCRATCH}/seed/extra.txt"
+seed_commit -am merged
+merged="$(git -C "${GH_ORIGIN}" rev-parse main)"
+git fetch -q origin
+git reset -q --hard origin/main~1
+printf 'version: 1.5.0\n' >CITATION.cff
+printf 'local\n' >extra.txt
+pr_script 'MERGEABLE|CLEAN' "MERGED|${merged}|CLEAN||0"
+run_pr
+refuses "create the release by hand" "checkout of the merge commit refused"
