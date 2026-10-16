@@ -1,0 +1,52 @@
+name: Token
+description: Pick a GitHub App token, a provided token, or the default token, and set the matching git identity.
+
+inputs:
+  app-id:
+    description: "Client id of the GitHub App. Used only with app-key."
+    required: false
+    default: ""
+  app-key:
+    description: "Private key of the GitHub App."
+    required: false
+    default: ""
+  token:
+    description: "Token to use when no App is set, such as a personal access token."
+    required: false
+    default: ""
+
+outputs:
+  token:
+    description: "The App token, else the provided token, else the default token."
+    value: ${{ steps.app.outputs.token || inputs.token || github.token }}
+  source:
+    description: "Where the token comes from: app, token or default."
+    value: ${{ steps.resolve.outputs.source }}
+
+runs:
+  using: composite
+  steps:
+    - name: Pick the credentials
+      id: resolve
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app-id }}
+        APP_KEY: ${{ inputs.app-key }}
+        PROVIDED_TOKEN: ${{ inputs.token }}
+      run: '"${GITHUB_ACTION_PATH}/resolve.sh"'
+
+    - name: Create the App token
+      id: app
+      if: ${{ steps.resolve.outputs.source == 'app' }}
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-key }}
+
+    - name: Set the git identity
+      shell: bash
+      env:
+        SOURCE: ${{ steps.resolve.outputs.source }}
+        APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        GH_TOKEN: ${{ steps.app.outputs.token || inputs.token || github.token }}
+      run: '"${GITHUB_ACTION_PATH}/identity.sh"'

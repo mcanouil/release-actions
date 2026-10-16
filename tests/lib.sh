@@ -51,7 +51,8 @@ refuses() {
 # Puts a fake gh first on PATH, for repository o/r. The tags in GH_TAGS (one
 # per line) exist, GH_RELEASE_EXISTS adds a release, GH_DOWN fails every call
 # as a token or network error would, GH_RELEASE_DOWN fails only the release
-# lookup, and GH_LOG, when set, records each call.
+# lookup, and GH_LOG, when set, records each call. Every App bot has the user
+# id 123, and every token belongs to octo, with the user id 456.
 install_fake_gh() {
   mkdir -p "${SCRATCH}/bin"
   export PATH="${SCRATCH}/bin:${PATH}"
@@ -78,6 +79,12 @@ case "$*" in
   prefix="${args#api repos/o/r/git/matching-refs/tags/}"
   prefix="${prefix%% *}"
   { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"
+  ;;
+"api /users/"*)
+  echo 123
+  ;;
+"api /user "*)
+  echo "octo 456"
   ;;
 "release view"*"--json"*)
   printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'
