@@ -85,8 +85,9 @@ fill_template() {
 }
 
 # Stops when the tag TAG, or a release named TAG, already exists in
-# REPOSITORY. An answer other than "not found" also stops, so an API error
-# never passes for a free tag. Needs gh.
+# REPOSITORY, and on any answer other than "not found". GitHub answers "not
+# found" for a draft release when the token cannot write to REPOSITORY.
+# Needs gh.
 refuse_existing_release() {
   local repository="$1" tag="$2" output
   if output="$(gh api "repos/${repository}/git/ref/tags/${tag}" --silent 2>&1)"; then

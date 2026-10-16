@@ -34,7 +34,7 @@ inputs:
     required: false
     default: ""
   token:
-    description: "Token that can read the tags and the releases."
+    description: "Token for the GitHub API. Only a token with contents: write sees draft releases."
     required: false
     default: ${{ github.token }}
 

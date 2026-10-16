@@ -81,7 +81,7 @@ If one of them exists, or if GitHub does not answer, the step stops.
 | `changelog-heading` | `## {version} ({date})` | Heading that the Unreleased section becomes. |
 | `allow-empty` | `false` | Release when the Unreleased section is empty. |
 | `date` | today in UTC | Release date, `YYYY-MM-DD`. |
-| `token` | `github.token` | Token that can read the tags and the releases. |
+| `token` | `github.token` | Token for the GitHub API. Only a token with `contents: write` sees draft releases. |
 
 | Output | Description |
 | --- | --- |

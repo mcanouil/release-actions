@@ -69,6 +69,7 @@ jobs:
           bump: ${{ inputs.bump }}
           version-source: tag
           tag-prefix: v
+          token: ${{ steps.app-token.outputs.token }}
           targets: |
             - file: CITATION.cff
               pattern: '^version: {version}$'
