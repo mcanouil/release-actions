@@ -67,17 +67,21 @@ On other runners, install `yq` v4 and `gh` before the first step.
 `bump` reads the current version, calculates the next version, and writes it to the target files.
 It also rolls the changelog.
 It does all of its checks before it writes a file, so a failed step does not change the working tree.
+One of these checks looks for the tag `<tag-prefix><version>` and for a release with this name.
+If one of them exists, or if GitHub does not answer, the step stops.
+`release` does the same check, but at that time the bump is already on the default branch.
 
 | Input | Default | Description |
 | --- | --- | --- |
 | `bump` | (required) | `patch`, `minor`, `major`, `calver`, or an explicit version such as `1.2.3`. |
 | `targets` | `''` | YAML list of targets. Each target has `file`, `pattern`, and optionally `source` and `required`. |
 | `version-source` | `target` | Where the current version comes from: `target` or `tag`. |
-| `tag-prefix` | `''` | Prefix of the version tags, such as `v`, for `version-source: tag`. |
+| `tag-prefix` | `''` | Prefix of the version tags, such as `v`. Give the same value to `release`. |
 | `changelog` | `CHANGELOG.md` | Path of the changelog. An empty string turns off the changelog roll. |
 | `changelog-heading` | `## {version} ({date})` | Heading that the Unreleased section becomes. |
 | `allow-empty` | `false` | Release when the Unreleased section is empty. |
 | `date` | today in UTC | Release date, `YYYY-MM-DD`. |
+| `token` | `github.token` | Token that can read the tags and the releases. |
 
 | Output | Description |
 | --- | --- |

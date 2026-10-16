@@ -14,7 +14,7 @@ inputs:
     required: false
     default: "target"
   tag-prefix:
-    description: "Prefix of the version tags, such as v, for version-source: tag."
+    description: "Prefix of the version tags, such as v. Give the same value to release."
     required: false
     default: ""
   changelog:
@@ -33,6 +33,10 @@ inputs:
     description: "Release date, YYYY-MM-DD. Default: today in UTC."
     required: false
     default: ""
+  token:
+    description: "Token that can read the tags and the releases."
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   version:
@@ -72,4 +76,5 @@ runs:
         CHANGELOG_HEADING: ${{ inputs.changelog-heading }}
         ALLOW_EMPTY: ${{ inputs.allow-empty }}
         RELEASE_DATE: ${{ inputs.date }}
+        GH_TOKEN: ${{ inputs.token }}
       run: '"${GITHUB_ACTION_PATH}/bump.sh"'

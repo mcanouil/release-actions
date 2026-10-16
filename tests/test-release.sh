@@ -12,12 +12,18 @@ export PATH="${SCRATCH}/bin:${PATH}"
 cat >"${SCRATCH}/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"${GH_LOG}"
+if [[ -n "${GH_DOWN:-}" ]]; then
+  echo "HTTP 401: Bad credentials" >&2
+  exit 1
+fi
 case "$*" in
 "api repos/o/r/git/ref/tags/"*)
   args="$*"
   tag="${args#api repos/o/r/git/ref/tags/}"
   tag="${tag%% *}"
-  grep -qxF "${tag}" "${GH_TAGS}"
+  grep -qxF "${tag}" "${GH_TAGS}" && exit 0
+  echo "gh: Not Found (HTTP 404)" >&2
+  exit 1
   ;;
 "api repos/o/r/git/matching-refs/tags/"*)
   args="$*"
@@ -29,7 +35,9 @@ case "$*" in
   printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'
   ;;
 "release view"*)
-  [[ -n "${GH_RELEASE_EXISTS:-}" ]]
+  [[ -n "${GH_RELEASE_EXISTS:-}" ]] && exit 0
+  echo "release not found" >&2
+  exit 1
   ;;
 *) exit 0 ;;
 esac
@@ -106,6 +114,9 @@ refuses_release "tag v1.5.0 already exists" "existing tag"
 
 run_release TAG_PREFIX=v GH_RELEASE_EXISTS=1
 refuses_release "a release named v1.5.0 already exists" "existing release"
+
+run_release TAG_PREFIX=v GH_DOWN=1
+refuses_release "could not check for the tag v1.5.0" "unreachable API"
 
 run_release ROLLING=true DRAFT=true
 refuses_release "rolling and draft are both true" "rolling draft"
