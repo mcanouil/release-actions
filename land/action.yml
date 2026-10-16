@@ -1,0 +1,45 @@
+name: Land
+description: Commit the files of a version bump and land them on the branch, with a push or a pull request.
+
+inputs:
+  mode:
+    description: "push to commit straight to the branch, or pull-request to open and merge a pull request."
+    required: true
+  files:
+    description: "Paths to commit, one per line, usually the files output of bump."
+    required: true
+  version:
+    description: "The version, usually the version output of bump."
+    required: true
+  tag-prefix:
+    description: "The commit names the release <tag-prefix><version>."
+    required: false
+    default: ""
+  merge-timeout:
+    description: "Seconds to wait for the pull request to merge. Only for pull-request."
+    required: false
+    default: "600"
+  token:
+    description: "Token with contents: write, and pull-requests: write for pull-request."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  sha:
+    description: "The commit on the branch that holds the bump."
+    value: ${{ steps.land.outputs.sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Land the bump
+      id: land
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        FILES: ${{ inputs.files }}
+        VERSION: ${{ inputs.version }}
+        TAG_PREFIX: ${{ inputs.tag-prefix }}
+        MERGE_TIMEOUT: ${{ inputs.merge-timeout }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: '"${GITHUB_ACTION_PATH}/land.sh"'
