@@ -124,7 +124,10 @@ case "$*" in
   echo "${line}"
   ;;
 "pr merge"*)
-  [[ -z "${GH_MERGE_FAILS:-}" ]] || exit 1
+  if [[ -n "${GH_MERGE_FAILS:-}" ]]; then
+    echo "Auto-merge is not allowed for this repository" >&2
+    exit 1
+  fi
   ;;
 "label list"*)
   [[ -z "${GH_LABELS:-}" ]] || cat "${GH_LABELS}"

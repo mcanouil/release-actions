@@ -21,6 +21,7 @@ REPOSITORY="${GITHUB_REPOSITORY:-}"
 MERGE_TIMEOUT="${MERGE_TIMEOUT:-600}"
 POLL_INTERVAL="${LAND_POLL_INTERVAL:-10}"
 BLOCKED_AFTER="${LAND_BLOCKED_AFTER:-120}"
+MERGE_GRACE="${LAND_MERGE_GRACE:-30}"
 LABEL='Type: CI/CD :robot:'
 
 require_tools git
@@ -99,19 +100,22 @@ open_pull_request() {
 
 land_pull_request() {
   local deadline=$((SECONDS + MERGE_TIMEOUT)) blocked_after=$((SECONDS + BLOCKED_AFTER))
-  local url info mergeable="UNKNOWN" state="" sha="" merge_state="" review="" checks=""
+  local url info mergeable="UNKNOWN" state="" sha="" merge_state="UNKNOWN" review="" checks=""
+  local merge_error="" merge_failed_at=""
   local merge_args=(--repo "${REPOSITORY}" --squash --delete-branch)
 
   url="$(open_pull_request "release/${tag}")"
   [[ -n "${url}" ]] || die "gh pr create printed no URL for release/${tag}."
 
-  while [[ "${mergeable}" == "UNKNOWN" ]]; do
+  # The merge state decides between a direct merge and auto-merge, so it has
+  # to be known too.
+  while [[ "${mergeable}" == "UNKNOWN" || ("${mergeable}" == "MERGEABLE" && "${merge_state}" == "UNKNOWN") ]]; do
     if info="$(gh pr view "${url}" --repo "${REPOSITORY}" --json mergeable,mergeStateStatus \
       --jq '"\(.mergeable)|\(.mergeStateStatus)"')"; then
       mergeable="${info%%|*}"
       merge_state="${info#*|}"
     fi
-    if [[ "${mergeable}" == "UNKNOWN" ]]; then
+    if [[ "${mergeable}" == "UNKNOWN" || "${merge_state}" == "UNKNOWN" ]]; then
       [[ ${SECONDS} -lt ${deadline} ]] || die "GitHub did not say whether ${url} can merge within ${MERGE_TIMEOUT}s. Raise merge-timeout, or merge it by hand and create the release."
       sleep "${POLL_INTERVAL}"
     fi
@@ -125,9 +129,12 @@ land_pull_request() {
   CLEAN | HAS_HOOKS | UNSTABLE) ;;
   *) merge_args+=(--auto) ;;
   esac
-  # gh can fail after the merge has landed, so the state decides.
-  gh pr merge "${url}" "${merge_args[@]}" >&2 ||
-    warn "gh pr merge failed; checking whether ${url} merged."
+  # gh can fail after the merge has landed, so the state decides, for
+  # MERGE_GRACE seconds.
+  if ! merge_error="$(gh pr merge "${url}" "${merge_args[@]}" 2>&1)"; then
+    merge_failed_at=${SECONDS}
+    warn "gh pr merge failed; checking whether ${url} merged. ${merge_error}"
+  fi
 
   # Every field comes from one response, so they describe one instant.
   while :; do
@@ -141,6 +148,9 @@ land_pull_request() {
     MERGED) [[ -z "${sha}" ]] || break ;;
     CLOSED) die "${url} was closed without merging. Dispatch the workflow again to open a new one." ;;
     esac
+    if [[ -n "${merge_failed_at}" && ${SECONDS} -ge $((merge_failed_at + MERGE_GRACE)) && "${state}" != "MERGED" ]]; then
+      die "gh pr merge failed and ${url} did not merge: ${merge_error} Correct the cause, close the pull request, and dispatch the workflow again."
+    fi
     # A push by the default token triggers no workflow, so a branch that
     # requires checks waits for checks that never start.
     if [[ ${SECONDS} -ge ${blocked_after} && "${merge_state}" == "BLOCKED" && "${checks}" == "0" && "${review}" != "REVIEW_REQUIRED" ]]; then

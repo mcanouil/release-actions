@@ -218,3 +218,18 @@ for timeout in abc 0; do
   refuses_landing "merge-timeout" "merge-timeout ${timeout}"
   assert_eq "" "${LOG}" "merge-timeout ${timeout} calls no gh"
 done
+
+fixture
+pr_script 'MERGEABLE|UNKNOWN' 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr
+assert_status 0 "${STATUS}" "unknown merge state: ${ERR}"
+if [[ "${LOG}" == *"--auto"* ]]; then
+  printf '  unknown merge state: --auto on a clean pull request\n' >&2
+  exit 1
+fi
+
+fixture
+pr_script 'MERGEABLE|BLOCKED' 'OPEN||BLOCKED||1'
+run_pr GH_MERGE_FAILS=1 LAND_MERGE_GRACE=0
+refuses "gh pr merge failed" "merge refused"
+assert_contains "${ERR}" "Auto-merge is not allowed" "merge refused keeps the gh error"
