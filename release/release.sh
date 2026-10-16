@@ -57,8 +57,14 @@ if [[ "${ROLLING}" == "true" && ! "${TARGET}" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 tag="${TAG_PREFIX}${VERSION}"
+# A further CalVer release of a day, such as 2026.10.16-2, counts itself in
+# the title; the first release of the day has no count.
+count=""
+if [[ "${VERSION}" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}-([0-9]+)$ ]]; then
+  count=" (${BASH_REMATCH[1]})"
+fi
 title="$(printf '%s' "${TITLE}" | FILL_tag="${tag}" FILL_version="${VERSION}" FILL_date="${RELEASE_DATE}" \
-  fill_template tag,version,date "title '${TITLE}'")"
+  FILL_count="${count}" fill_template tag,version,date,count "title '${TITLE}'" count)"
 
 asset_args=()
 while IFS= read -r line; do

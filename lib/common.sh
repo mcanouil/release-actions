@@ -69,12 +69,13 @@ release_date() {
 }
 
 # Fills the {name} placeholders of standard input from the FILL_name variables
-# with lib/fill.pl. NAMES is the comma-separated list of allowed names, and
-# WHAT names the template in the error messages. Needs LIB.
+# with lib/fill.pl. NAMES is the comma-separated list of allowed names, WHAT
+# names the template in the error messages, and OPTIONAL lists the names that
+# can be empty. Needs LIB.
 fill_template() {
-  local names="$1" what="$2" errors status=0 text allowed
+  local names="$1" what="$2" optional="${3:-}" errors status=0 text allowed
   errors="$(temp_dir)/fill-$$.err"
-  text="$(perl "${LIB}/fill.pl" "${names}" 2>"${errors}")" || status=$?
+  text="$(perl "${LIB}/fill.pl" "${names}" "${optional}" 2>"${errors}")" || status=$?
   allowed="$(perl -e 'print join ", ", map { "{$_}" } split /,/, $ARGV[0]' -- "${names}")"
   case "${status}" in
   0) printf '%s\n' "${text}" ;;

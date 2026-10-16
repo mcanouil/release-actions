@@ -26,3 +26,9 @@ assert_eq "{tag}" "${err}" "empty placeholder listed"
 
 assert_eq "" "$(perl "${script}" "${names}" </dev/null)" "empty input"
 assert_eq "no placeholders" "$(printf 'no placeholders' | perl "${script}" "${names}")" "plain text"
+
+assert_eq "2026-10-15" "$(printf '{date}{count}' | FILL_count='' perl "${script}" "${names},count" count)" "optional placeholder may be empty"
+status=0
+err="$(printf '{tag}{count}' | FILL_tag='' FILL_count='' perl "${script}" "${names},count" count 2>&1 >/dev/null)" || status=$?
+assert_status 3 "${status}" "optional names do not cover other empty values"
+assert_eq "{tag}" "${err}" "only the required empty placeholder listed"
