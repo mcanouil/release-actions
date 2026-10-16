@@ -50,7 +50,8 @@ refuses() {
 
 # Puts a fake gh first on PATH, for repository o/r. The tags in GH_TAGS (one
 # per line) exist, GH_RELEASE_EXISTS adds a release, GH_DOWN fails every call
-# as a token or network error would, and GH_LOG, when set, records each call.
+# as a token or network error would, GH_RELEASE_DOWN fails only the release
+# lookup, and GH_LOG, when set, records each call.
 install_fake_gh() {
   mkdir -p "${SCRATCH}/bin"
   export PATH="${SCRATCH}/bin:${PATH}"
@@ -82,6 +83,10 @@ case "$*" in
   printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'
   ;;
 "release view"*)
+  if [[ -n "${GH_RELEASE_DOWN:-}" ]]; then
+    echo "HTTP 502: Bad Gateway" >&2
+    exit 1
+  fi
   [[ -n "${GH_RELEASE_EXISTS:-}" ]] && exit 0
   echo "release not found" >&2
   exit 1

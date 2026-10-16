@@ -14,6 +14,7 @@ Your workflow lands the commit between `bump` and `release`, with a push or with
 The actions run on the GitHub-hosted Ubuntu and macOS runners.
 These runners have bash, perl, `yq` v4 and `gh`.
 On other runners, install `yq` v4 and `gh` before the first step.
+`bump` and `release` call the GitHub API, so the job needs `contents: read` at least.
 
 ## Example
 

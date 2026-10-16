@@ -83,6 +83,9 @@ refuses_release "a release named v1.5.0 already exists" "existing release"
 run_release TAG_PREFIX=v GH_DOWN=1
 refuses_release "could not check for the tag v1.5.0" "unreachable API"
 
+run_release TAG_PREFIX=v GH_RELEASE_DOWN=1
+refuses_release "could not check for the release v1.5.0" "unreachable releases API"
+
 run_release ROLLING=true DRAFT=true
 refuses_release "rolling and draft are both true" "rolling draft"
 
