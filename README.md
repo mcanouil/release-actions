@@ -250,47 +250,79 @@ The body must be 125,000 characters or less, which is the GitHub limit.
 
 ## land
 
-`land` commits the files of a bump on the branch of the workflow.
-The release is `<tag-prefix><version>` in the text below.
+`land` commits files on the branch of the workflow.
+It lands a release bump, or any other change that a workflow makes, such as rendered files or refreshed test snapshots.
 The `mode` input sets how the commit gets to the branch.
 
-With `mode: push`, `land` commits `ci: release <tag-prefix><version> [skip ci]` and pushes it to the branch.
-`[skip ci]` stops the checks from running again on the same tree.
+With a `version`, `land` uses the defaults of a release, where `<tag>` is `<tag-prefix><version>`:
+
+- The push message is `ci: release <tag> [skip ci]`.
+  `[skip ci]` stops the checks from running again on the same tree.
+- The pull request message is `ci: release <tag>`, without `[skip ci]`, because the required checks of the pull request must run.
+- The branch is `release/<tag>`, and the body is `Automated release of <tag>.`.
+
+Without a `version`, give `message`, and `branch` for `mode: pull-request`.
+`land` uses `message` verbatim, as the commit message and the pull request title.
+
+With `mode: push`, `land` commits and pushes to the branch of the workflow.
 
 With `mode: pull-request`, `land` does these steps:
 
-1. It commits `ci: release <tag-prefix><version>` on the branch `release/<tag-prefix><version>`, and force-pushes this branch.
-   If an earlier run left a pull request open for this branch, `land` closes it first.
-2. It opens a pull request, with the label `Type: CI/CD :robot:` if the repository has this label.
-3. It squash-merges the pull request and deletes the branch.
+1. It commits on `branch`, and force-pushes this branch.
+2. If a pull request is open for this branch, `land` updates its title and body.
+   Otherwise, it opens a pull request, with the label `Type: CI/CD :robot:` if the repository has this label.
+3. With `merge: auto`, it merges the pull request with `merge-method` and deletes the branch.
    If checks block the merge, it turns on auto-merge.
-4. It waits until the pull request merges, for `merge-timeout` seconds at most.
+   With `merge: none`, it stops here.
+4. With `wait: true`, it waits until the pull request merges, for `merge-timeout` seconds at most.
 
-The commit of a pull request has no `[skip ci]`, because the required checks of the pull request must run.
-
-After `land`, the working tree is at the landed commit, with a detached `HEAD`.
-The next steps, for example a build, use the released files.
+After `land` has a landed commit, the working tree is at this commit, with a detached `HEAD`.
+The next steps, for example a build, use the landed files.
 
 | Input | Default | Description |
 | --- | --- | --- |
 | `mode` | (required) | `push` or `pull-request`. |
-| `files` | (required) | Paths to commit, one per line, usually the `files` output of `bump`. |
-| `version` | (required) | The version, usually the `version` output of `bump`. |
-| `tag-prefix` | `''` | Prefix of the release name in the commit message and the branch. |
+| `files` | (required) | Paths to commit, one per line: files or directories. A tracked file that the workflow deleted is a change. |
+| `version` | `''` | The version of a release, usually the `version` output of `bump`. |
+| `tag-prefix` | `''` | Prefix of the release name in the default message and branch. |
+| `message` | release message | Commit message and pull request title. Required without `version`. |
+| `branch` | `release/<tag>` | Head branch of the pull request. Required for `pull-request` without `version`. |
+| `body` | release body, else `message` | Pull request body. |
+| `merge` | `auto` | `auto` or `none`. |
+| `merge-method` | `squash` | `squash` or `merge`. |
+| `wait` | `true` | Wait until the pull request merges. |
+| `allow-unchanged` | `false` | When the files have no change, stop with success and `changed: false`. |
 | `merge-timeout` | `600` | Seconds to wait for the pull request to merge. |
 | `token` | `github.token` | Token for the GitHub API in `pull-request` mode, with `contents: write` and `pull-requests: write`. |
 
 | Output | Description |
 | --- | --- |
-| `sha` | The commit on the branch that contains the bump. |
+| `sha` | The landed commit. It is empty when nothing landed, with `merge: none`, and with `wait: false`. |
+| `changed` | `true` when the files had a change, else `false`. |
+| `pull-request` | URL of the pull request, in `pull-request` mode. |
 
 `land` pushes with the credentials that `actions/checkout` keeps, in both modes.
 Thus the token of the checkout decides if the push is accepted.
 Give the same token to `actions/checkout` and to `land`.
 
 `land` commits only the paths in `files`.
-If the workflow changes other files, add their paths to `files`.
-If the files have no change, the step stops: the bump can already be on the branch.
+If the files have no change, the step stops with an error, because the bump can already be on the branch.
+A scheduled job that can find nothing to change sets `allow-unchanged: true`.
+
+This step refreshes generated files through a pull request that waits for a review:
+
+```yaml
+- name: Propose the refreshed snapshots
+  uses: mcanouil/release-actions/land@v1
+  with:
+    mode: pull-request
+    files: tests/snapshots
+    message: "test: refresh the snapshots"
+    branch: ci/refresh-snapshots
+    merge: none
+    allow-unchanged: true
+    token: ${{ steps.token.outputs.token }}
+```
 
 ### Modes and tokens
 
@@ -320,7 +352,7 @@ GitHub creates the tag as a lightweight tag on `target`.
 | `version` | (required) | The version to release, usually the `version` output of `bump`. |
 | `tag-prefix` | `''` | The tag is `<tag-prefix><version>`. |
 | `body-file` | (required) | The release body, usually the `body-file` output of `notes`. |
-| `title` | `{tag}` | Title of the release. Placeholders: `{tag}`, `{version}`, `{date}`. |
+| `title` | `{tag}` | Title of the release. Placeholders: `{tag}`, `{version}`, `{date}`, `{count}`. |
 | `date` | today in UTC | Value of `{date}` in the title, `YYYY-MM-DD`. |
 | `target` | `github.sha` | Commit to tag. |
 | `assets` | `''` | Globs of the files to attach, one per line. Add `#label` to a line to give a label. |
@@ -335,6 +367,9 @@ GitHub creates the tag as a lightweight tag on `target`.
 | `tag` | Tag of the release. |
 | `url` | URL of the release. |
 | `release-id` | Numeric identifier of the release. |
+
+In the title, `{count}` is empty for a version such as `2026.10.16`, and a space then `(2)` for `2026.10.16-2`.
+Thus `title: "{date}{count}"` gives `2026-10-16` for the first release of a day, and `2026-10-16 (2)` for the second one.
 
 If the tag or the release already exists, the step stops before it creates anything.
 Each asset glob must match at least one file.
