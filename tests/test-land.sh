@@ -201,6 +201,7 @@ fixture
 pr_script 'MERGEABLE|BLOCKED' 'OPEN||BLOCKED||0'
 run_pr LAND_BLOCKED_AFTER=0
 refuses "App token" "blocked with no checks"
+assert_contains "${ERR}" "another branch rule" "blocked with no checks names other rules"
 
 fixture
 pr_script 'MERGEABLE|BLOCKED' 'OPEN||BLOCKED|REVIEW_REQUIRED|0'
@@ -259,6 +260,7 @@ pr_script 'MERGEABLE|CLEAN' "MERGED|${merged}|CLEAN||0"
 run_pr
 refuses "create the release by hand" "checkout of the merge commit refused"
 
+# shellcheck disable=SC2016 # The literal $HOME proves land uses the message verbatim.
 message='chore: refresh "goldens" for $HOME
 
 Second paragraph.'

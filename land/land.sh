@@ -217,7 +217,7 @@ land_pull_request() {
     # A push by the default token triggers no workflow, so a branch that
     # requires checks waits for checks that never start.
     if [[ ${SECONDS} -ge ${blocked_after} && "${merge_state}" == "BLOCKED" && "${checks}" == "0" && "${review}" != "REVIEW_REQUIRED" ]]; then
-      die "${url} is blocked and no check runs against it. The branch requires status checks, and a push by the default token starts none: use an App token, or a token from the token input."
+      die "${url} is blocked and no check runs against it. Either the branch requires status checks and the push started none, as a push by the default token does: use an App token, or a token from the token input. Or another branch rule blocks the merge, such as signed commits, linear history or resolved conversations: merge it by hand."
     fi
     if [[ ${SECONDS} -ge ${deadline} ]]; then
       if [[ "${state}" == "MERGED" ]]; then
