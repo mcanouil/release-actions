@@ -19,13 +19,16 @@ TAG_PREFIX="${TAG_PREFIX:-}"
 CHANGELOG="${CHANGELOG-CHANGELOG.md}"
 CHANGELOG_HEADING="${CHANGELOG_HEADING:-${DEFAULT_CHANGELOG_HEADING}}"
 ALLOW_EMPTY="${ALLOW_EMPTY:-false}"
+REPOSITORY="${GITHUB_REPOSITORY:-}"
 placeholder_regex='\{(version|date|major)\}'
 
 [[ -n "${BUMP}" ]] || die "bump is empty. Use patch, minor, major, calver, or a version such as 1.2.3."
 RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 require_bool allow-empty "${ALLOW_EMPTY}"
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
-require_tools perl yq
+require_tools perl yq gh
+[[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
+[[ "${TAG_PREFIX}" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '${TAG_PREFIX}'. Use letters, digits, dots, hyphens or underscores."
 
 # Targets, as four lists with one entry per target.
 t_file=()
@@ -171,6 +174,9 @@ if [[ -n "${CHANGELOG}" ]]; then
   *) die "could not read ${CHANGELOG}." ;;
   esac
 fi
+
+# The release step checks this too, but only after the bump has landed.
+refuse_existing_release "${REPOSITORY}" "${TAG_PREFIX}${version}"
 
 # Writes.
 export VERSION="${version}" DATE="${RELEASE_DATE}" MAJOR="${major}"

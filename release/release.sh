@@ -83,12 +83,7 @@ while IFS= read -r line; do
   fi
 done <<<"${ASSETS}"
 
-if gh api "repos/${REPOSITORY}/git/ref/tags/${tag}" --silent >/dev/null 2>&1; then
-  die "tag ${tag} already exists. Bump to a new version, or delete the tag if a failed run left it."
-fi
-if gh release view "${tag}" --repo "${REPOSITORY}" >/dev/null 2>&1; then
-  die "a release named ${tag} already exists, perhaps as a draft. Delete or publish it, then run again."
-fi
+refuse_existing_release "${REPOSITORY}" "${tag}"
 
 args=(release create "${tag}" --repo "${REPOSITORY}" --target "${TARGET}" --title "${title}" --notes-file "${BODY_FILE}")
 if [[ "${DRAFT}" == "true" ]]; then

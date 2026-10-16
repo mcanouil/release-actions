@@ -83,3 +83,23 @@ fill_template() {
   *) die "could not fill ${what}." ;;
   esac
 }
+
+# Stops when the tag TAG, or a release named TAG, already exists in
+# REPOSITORY, and on any answer other than "not found". GitHub answers "not
+# found" for a draft release when the token cannot write to REPOSITORY.
+# Needs gh.
+refuse_existing_release() {
+  local repository="$1" tag="$2" output
+  if output="$(gh api "repos/${repository}/git/ref/tags/${tag}" --silent 2>&1)"; then
+    die "tag ${tag} already exists. Bump to a new version, or delete the tag if a failed run left it."
+  fi
+  if [[ "${output}" != *"HTTP 404"* ]]; then
+    die "could not check for the tag ${tag}: ${output}. Check that the token can read ${repository}."
+  fi
+  if output="$(gh release view "${tag}" --repo "${repository}" 2>&1 >/dev/null)"; then
+    die "a release named ${tag} already exists, perhaps as a draft. Delete or publish it, then run again."
+  fi
+  if [[ "${output}" != *"release not found"* ]]; then
+    die "could not check for the release ${tag}: ${output}. Check that the token can read ${repository}."
+  fi
+}

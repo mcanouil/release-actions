@@ -6,35 +6,8 @@ source "${ROOT}/tests/lib.sh"
 script="${ROOT}/release/release.sh"
 sha=0123456789abcdef0123456789abcdef01234567
 export RUNNER_TEMP="${SCRATCH}/tmp" GITHUB_REPOSITORY=o/r GH_LOG="${SCRATCH}/gh.log" GH_TAGS="${SCRATCH}/tags"
-mkdir -p "${RUNNER_TEMP}" "${SCRATCH}/bin" "${SCRATCH}/work/dist"
-export PATH="${SCRATCH}/bin:${PATH}"
-
-cat >"${SCRATCH}/bin/gh" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >>"${GH_LOG}"
-case "$*" in
-"api repos/o/r/git/ref/tags/"*)
-  args="$*"
-  tag="${args#api repos/o/r/git/ref/tags/}"
-  tag="${tag%% *}"
-  grep -qxF "${tag}" "${GH_TAGS}"
-  ;;
-"api repos/o/r/git/matching-refs/tags/"*)
-  args="$*"
-  prefix="${args#api repos/o/r/git/matching-refs/tags/}"
-  prefix="${prefix%% *}"
-  { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"
-  ;;
-"release view"*"--json"*)
-  printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'
-  ;;
-"release view"*)
-  [[ -n "${GH_RELEASE_EXISTS:-}" ]]
-  ;;
-*) exit 0 ;;
-esac
-EOF
-chmod +x "${SCRATCH}/bin/gh"
+mkdir -p "${RUNNER_TEMP}" "${SCRATCH}/work/dist"
+install_fake_gh
 
 cd "${SCRATCH}/work"
 body="${SCRATCH}/body.md"
@@ -106,6 +79,12 @@ refuses_release "tag v1.5.0 already exists" "existing tag"
 
 run_release TAG_PREFIX=v GH_RELEASE_EXISTS=1
 refuses_release "a release named v1.5.0 already exists" "existing release"
+
+run_release TAG_PREFIX=v GH_DOWN=1
+refuses_release "could not check for the tag v1.5.0" "unreachable API"
+
+run_release TAG_PREFIX=v GH_RELEASE_DOWN=1
+refuses_release "could not check for the release v1.5.0" "unreachable releases API"
 
 run_release ROLLING=true DRAFT=true
 refuses_release "rolling and draft are both true" "rolling draft"

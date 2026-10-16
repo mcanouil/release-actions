@@ -4,8 +4,10 @@ set -euo pipefail
 source "${ROOT}/tests/lib.sh"
 
 script="${ROOT}/bump/bump.sh"
-export RUNNER_TEMP="${SCRATCH}/tmp"
+export RUNNER_TEMP="${SCRATCH}/tmp" GITHUB_REPOSITORY=o/r GH_TAGS="${SCRATCH}/tags"
 mkdir -p "${RUNNER_TEMP}"
+: >"${GH_TAGS}"
+install_fake_gh
 
 # Writes a fresh fixture repository at SCRATCH/repo and moves into it.
 fixture() {
@@ -330,3 +332,25 @@ run_bump BUMP=minor TARGETS="${TARGETS_ALL}
   pattern: 'x{version}'"
 assert_status 1 "${STATUS}" "late failure"
 assert_eq "${before}" "$(tree_sum)" "tree unchanged after a failure"
+
+# An existing tag or release stops the bump before any write.
+fixture
+before="$(tree_sum)"
+printf 'v1.5.0\n' >"${GH_TAGS}"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" TAG_PREFIX=v
+refuses "tag v1.5.0 already exists" "existing tag"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged after an existing tag"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}"
+assert_status 0 "${STATUS}" "the tag check uses tag-prefix: ${ERR}"
+: >"${GH_TAGS}"
+fixture
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" GH_RELEASE_EXISTS=1
+refuses "a release named 1.5.0 already exists" "existing release"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged after an existing release"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" GH_DOWN=1
+refuses "could not check for the tag 1.5.0" "unreachable API"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged after an API error"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" GITHUB_REPOSITORY=
+refuses "GITHUB_REPOSITORY is not set" "no repository"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" TAG_PREFIX=a/b
+refuses "tag-prefix is 'a/b'" "bad tag-prefix"
