@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- feat: Add the `land` action. It commits the bump and lands it on the branch, with a push or with a pull request that it merges.
+- feat: Add the `token` action. It picks a GitHub App token, a token that you give, or the default token, and sets the matching git identity.
+
 ## 1.1.0 (2026-10-16)
 
 - fix: `bump` now stops when the tag or the release of the new version already exists, before it writes a file. Give it the same `tag-prefix` as `release`, which allows only letters, digits, dots, hyphens and underscores. (#4)
