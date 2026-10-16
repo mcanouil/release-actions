@@ -85,7 +85,10 @@ fi
 files=()
 while IFS= read -r file; do
   if [[ -n "${file}" ]]; then
-    [[ -e "${file}" ]] || die "files lists ${file}, which does not exist. Pass the files output of the bump action."
+    # A tracked file that the workflow deleted is a change to land.
+    if [[ ! -e "${file}" && -z "$(git ls-files -- "${file}")" ]]; then
+      die "files lists ${file}, which does not exist and is not tracked. Pass the files output of the bump action, or paths in the repository."
+    fi
     files+=("${file}")
   fi
 done <<<"${FILES}"
@@ -99,7 +102,7 @@ if [[ -z "$(git config user.name || true)" || -z "$(git config user.email || tru
   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 fi
 
-git add -- "${files[@]}"
+git add -A -- "${files[@]}"
 if git diff --cached --quiet; then
   if [[ "${ALLOW_UNCHANGED}" == "true" ]]; then
     printf 'No change in %s: nothing to land.\n' "${files[*]}"
@@ -125,22 +128,26 @@ die_landed() {
   die "$1 ${BRANCH} holds ${landed}: ${recovery}."
 }
 
-# Opens the pull request of the bump and prints its URL. A pull request left
-# open by an earlier run would make gh pr create fail, so it is closed first.
+# Pushes the head branch and prints the URL of its pull request. An open pull
+# request on the branch, from an earlier run, is updated rather than replaced,
+# so its review comments stay.
 open_pull_request() {
-  local head="$1" stale labels=()
+  local head="$1" open="" labels=()
   if git ls-remote --exit-code --heads origin "${head}" >/dev/null 2>&1; then
-    stale="$(gh pr list --repo "${REPOSITORY}" --head "${head}" --state open --json number --jq '.[0].number // empty')" ||
+    open="$(gh pr list --repo "${REPOSITORY}" --head "${head}" --state open --json number,url \
+      --jq '.[0] | select(.) | "\(.number) \(.url)"')" ||
       die "could not list the pull requests of ${head}. Check that the token can read ${REPOSITORY}."
-    if [[ -n "${stale}" ]]; then
-      warn "closing the pull request #${stale} that an earlier run left open."
-      gh pr close "${stale}" --repo "${REPOSITORY}" >&2
-    fi
   fi
   git checkout -q -B "${head}"
   git commit -q -m "${pr_message}"
   git push -q --force origin "HEAD:refs/heads/${head}" ||
     die "the token could not push ${head}. Check that it has contents: write on ${REPOSITORY}."
+  if [[ -n "${open}" ]]; then
+    gh pr edit "${open%% *}" --repo "${REPOSITORY}" --title "${pr_message}" --body "${BODY}" >&2 ||
+      die "could not update the pull request #${open%% *} of ${head}."
+    printf '%s\n' "${open#* }"
+    return 0
+  fi
   if gh label list --repo "${REPOSITORY}" --limit 1000 --json name --jq '.[].name' | grep -qxF "${LABEL}"; then
     labels=(--label "${LABEL}")
   fi

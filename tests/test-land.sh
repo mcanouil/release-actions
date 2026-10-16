@@ -170,10 +170,15 @@ assert_contains "${LOG}" "--label Type: CI/CD :robot:" "label"
 fixture
 git push -q origin HEAD:refs/heads/release/v1.5.0
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
-run_pr GH_STALE_PR=3
-assert_status 0 "${STATUS}" "stale pull request: ${ERR}"
-assert_contains "${LOG}" "pr close 3 --repo o/r" "stale pull request closed"
-assert_eq "ci: release v1.5.0" "$(git -C "${GH_ORIGIN}" log -1 --format=%s release/v1.5.0)" "stale branch replaced"
+run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3'
+assert_status 0 "${STATUS}" "open pull request: ${ERR}"
+assert_contains "${LOG}" "pr edit 3 --repo o/r --title ci: release v1.5.0 --body Automated release of v1.5.0." "open pull request updated"
+assert_contains "${LOG}" "pr merge https://github.com/o/r/pull/3 " "open pull request merged"
+if [[ "${LOG}" == *"pr close"* || "${LOG}" == *"pr create"* ]]; then
+  printf '  open pull request: closed or created [%s]\n' "${LOG}" >&2
+  exit 1
+fi
+assert_eq "ci: release v1.5.0" "$(git -C "${GH_ORIGIN}" log -1 --format=%s release/v1.5.0)" "open pull request branch replaced"
 
 fixture
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
@@ -344,3 +349,31 @@ run_pr WAIT=maybe
 refuses_landing "wait" "bad wait"
 run_land ALLOW_UNCHANGED=yes
 refuses_landing "allow-unchanged" "bad allow-unchanged"
+
+fixture
+git push -q origin HEAD:refs/heads/release/v1.5.0
+run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3' MERGE=none
+assert_status 0 "${STATUS}" "open pull request, merge none: ${ERR}"
+assert_contains "${LOG}" "pr edit 3" "open pull request, merge none, updated"
+assert_eq "https://github.com/o/r/pull/3" "$(output_value pull-request "${OUT}")" "open pull request url"
+if [[ "${LOG}" == *"pr merge"* ]]; then
+  printf '  open pull request, merge none: merged\n' >&2
+  exit 1
+fi
+
+fixture
+mkdir -p "${SCRATCH}/seed/goldens"
+printf 'a\n' >"${SCRATCH}/seed/goldens/a.png"
+printf 'b\n' >"${SCRATCH}/seed/goldens/b.png"
+printf 'c\n' >"${SCRATCH}/seed/c.txt"
+git -C "${SCRATCH}/seed" add goldens c.txt
+seed_commit -m goldens
+git pull -q --ff-only origin main
+rm goldens/a.png c.txt
+printf 'b2\n' >goldens/b.png
+run_land VERSION= MESSAGE='test: refresh goldens' FILES="goldens
+c.txt"
+assert_status 0 "${STATUS}" "directory and deletions: ${ERR}"
+assert_eq "D	c.txt
+D	goldens/a.png
+M	goldens/b.png" "$(git -C "${GH_ORIGIN}" diff --name-status main~1 main | LC_ALL=C sort)" "directory and deletions landed"

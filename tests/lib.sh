@@ -54,10 +54,12 @@ refuses() {
 # lookup, and GH_LOG, when set, records each call. Every App bot has the user
 # id 123, and every token belongs to octo, with the user id 456.
 # For pull requests: GH_STALE_PR is the open pull request of the head branch,
+# as "<number> <url>",
 # GH_LABELS a file of label names, GH_MERGE_FAILS fails gh pr merge, and each
 # gh pr view prints the next line of the file GH_PR_SCRIPT, repeating the last
 # one. A line "!fail" fails that call, and {branch-sha} stands for the commit
-# of release/v1.5.0 in the bare repository GH_ORIGIN.
+# of GH_HEAD_BRANCH (default release/v1.5.0) in the bare repository
+# GH_ORIGIN.
 install_fake_gh() {
   mkdir -p "${SCRATCH}/bin"
   export PATH="${SCRATCH}/bin:${PATH}"
