@@ -20,6 +20,10 @@ TAG_PREFIX="${TAG_PREFIX:-}"
 MESSAGE="${MESSAGE:-}"
 PR_BRANCH="${PR_BRANCH:-}"
 BODY="${BODY:-}"
+MERGE="${MERGE:-auto}"
+MERGE_METHOD="${MERGE_METHOD:-squash}"
+WAIT="${WAIT:-true}"
+ALLOW_UNCHANGED="${ALLOW_UNCHANGED:-false}"
 BRANCH="${GITHUB_REF_NAME:-}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 MERGE_TIMEOUT="${MERGE_TIMEOUT:-600}"
@@ -41,6 +45,16 @@ fi
 [[ "${TAG_PREFIX}" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '${TAG_PREFIX}'. Use letters, digits, dots, hyphens or underscores."
 [[ -n "${BRANCH}" ]] || die "GITHUB_REF_NAME is not set. Run land in a workflow on a branch."
 [[ "${MERGE_TIMEOUT}" =~ ^[1-9][0-9]*$ ]] || die "merge-timeout is '${MERGE_TIMEOUT}'. Use a number of seconds above 0."
+case "${MERGE}" in
+auto | none) ;;
+*) die "merge is '${MERGE}'. Use auto or none." ;;
+esac
+case "${MERGE_METHOD}" in
+squash | merge) ;;
+*) die "merge-method is '${MERGE_METHOD}'. Use squash or merge." ;;
+esac
+require_bool wait "${WAIT}"
+require_bool allow-unchanged "${ALLOW_UNCHANGED}"
 if [[ "${MODE}" == "pull-request" ]]; then
   require_tools gh
   [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
@@ -87,6 +101,12 @@ fi
 
 git add -- "${files[@]}"
 if git diff --cached --quiet; then
+  if [[ "${ALLOW_UNCHANGED}" == "true" ]]; then
+    printf 'No change in %s: nothing to land.\n' "${files[*]}"
+    set_output changed false
+    set_output sha ""
+    exit 0
+  fi
   if [[ -n "${VERSION}" ]]; then
     die "no change in ${files[*]} against HEAD. The bump may already be on ${BRANCH}: check it before you dispatch the workflow again."
   fi
@@ -134,10 +154,12 @@ land_pull_request() {
   local deadline=$((SECONDS + MERGE_TIMEOUT)) blocked_after=$((SECONDS + BLOCKED_AFTER))
   local url info mergeable="UNKNOWN" state="" sha="" merge_state="UNKNOWN" review="" checks=""
   local merge_error="" merge_failed_at=""
-  local merge_args=(--repo "${REPOSITORY}" --squash --delete-branch)
+  local merge_args=(--repo "${REPOSITORY}" "--${MERGE_METHOD}" --delete-branch)
 
   url="$(open_pull_request "${PR_BRANCH}")"
   [[ -n "${url}" ]] || die "gh pr create printed no URL for ${PR_BRANCH}."
+  set_output pull-request "${url}"
+  [[ "${MERGE}" == "auto" ]] || return 0
 
   # The merge state decides between a direct merge and auto-merge, so it has
   # to be known too.
@@ -165,8 +187,10 @@ land_pull_request() {
   # MERGE_GRACE seconds.
   if ! merge_error="$(gh pr merge "${url}" "${merge_args[@]}" 2>&1)"; then
     merge_failed_at=${SECONDS}
+    [[ "${WAIT}" == "true" ]] || die "gh pr merge failed for ${url}: ${merge_error}"
     warn "gh pr merge failed; checking whether ${url} merged. ${merge_error}"
   fi
+  [[ "${WAIT}" == "true" ]] || return 0
 
   # Every field comes from one response, so they describe one instant.
   while :; do
@@ -206,5 +230,8 @@ push) sha="$(land_push)" ;;
 pull-request) sha="$(land_pull_request)" ;;
 esac
 
-git checkout -q --detach "${sha}" || die_landed "could not check out ${sha}."
+if [[ -n "${sha}" ]]; then
+  git checkout -q --detach "${sha}" || die_landed "could not check out ${sha}."
+fi
+set_output changed true
 set_output sha "${sha}"

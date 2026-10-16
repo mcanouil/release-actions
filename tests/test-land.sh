@@ -285,3 +285,62 @@ run_pr VERSION= MESSAGE='ci: x'
 refuses_landing "branch" "pull request with no branch"
 run_pr MESSAGE='ci: x' PR_BRANCH=main
 refuses_landing "branch" "pull request branch is the base"
+
+fixture
+pr_script 'MERGEABLE|CLEAN'
+run_pr MERGE=none
+assert_status 0 "${STATUS}" "merge none: ${ERR}"
+if [[ "${LOG}" == *"pr merge"* || "${LOG}" == *"pr view"* ]]; then
+  printf '  merge none: merged or polled [%s]\n' "${LOG}" >&2
+  exit 1
+fi
+assert_eq "https://github.com/o/r/pull/7" "$(output_value pull-request "${OUT}")" "merge none url"
+assert_eq "true" "$(output_value changed "${OUT}")" "merge none changed"
+assert_eq "" "$(output_value sha "${OUT}")" "merge none sha"
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr MERGE_METHOD=merge
+assert_status 0 "${STATUS}" "merge method: ${ERR}"
+assert_contains "${LOG}" "--repo o/r --merge --delete-branch" "merge method call"
+
+fixture
+pr_script 'MERGEABLE|BLOCKED'
+run_pr WAIT=false
+assert_status 0 "${STATUS}" "no wait: ${ERR}"
+assert_contains "${LOG}" "--auto" "no wait auto-merge"
+assert_eq "1" "$(grep -c '^pr view' "${GH_LOG}")" "no wait polls once, for mergeability"
+assert_eq "" "$(output_value sha "${OUT}")" "no wait sha"
+assert_eq "true" "$(output_value changed "${OUT}")" "no wait changed"
+
+fixture
+pr_script 'MERGEABLE|BLOCKED'
+run_pr WAIT=false GH_MERGE_FAILS=1
+refuses "gh pr merge failed" "no wait merge refused"
+
+fixture
+git checkout -q -- CITATION.cff
+for mode in push pull-request; do
+  for version in 1.5.0 ''; do
+    run_land MODE="${mode}" VERSION="${version}" MESSAGE='ci: x' PR_BRANCH=ci/x ALLOW_UNCHANGED=true
+    assert_status 0 "${STATUS}" "unchanged ${mode} '${version}': ${ERR}"
+    assert_eq "false" "$(output_value changed "${OUT}")" "unchanged ${mode} '${version}' changed"
+    assert_eq "" "$(output_value sha "${OUT}")" "unchanged ${mode} '${version}' sha"
+    assert_eq "" "$(cat "${GH_LOG}")" "unchanged ${mode} '${version}' calls no gh"
+    assert_eq "$(origin_main)" "$(git rev-parse HEAD)" "unchanged ${mode} '${version}' adds no commit"
+  done
+done
+
+fixture
+run_land
+assert_eq "true" "$(output_value changed "${OUT}")" "push changed"
+
+fixture
+run_pr MERGE=later
+refuses_landing "merge" "unknown merge"
+run_pr MERGE_METHOD=rebase
+refuses_landing "merge-method" "unknown merge method"
+run_pr WAIT=maybe
+refuses_landing "wait" "bad wait"
+run_land ALLOW_UNCHANGED=yes
+refuses_landing "allow-unchanged" "bad allow-unchanged"
