@@ -1,5 +1,5 @@
 name: Land
-description: Commit the files of a version bump and land them on the branch, with a push or a pull request.
+description: Commit files and land them on the branch, with a push or a pull request. A version gives the message, branch and body of a release.
 
 inputs:
   mode:
@@ -9,10 +9,23 @@ inputs:
     description: "Paths to commit, one per line, usually the files output of bump."
     required: true
   version:
-    description: "The version, usually the version output of bump."
-    required: true
+    description: "The version of a release, usually the version output of bump. It gives the defaults of message, branch and body."
+    required: false
+    default: ""
   tag-prefix:
     description: "The commit names the release <tag-prefix><version>."
+    required: false
+    default: ""
+  message:
+    description: "Commit message and pull request title, used verbatim. Required without version."
+    required: false
+    default: ""
+  branch:
+    description: "Head branch of the pull request. Default: release/<tag-prefix><version>. Required for pull-request without version."
+    required: false
+    default: ""
+  body:
+    description: "Pull request body. Default: the release body, else the message."
     required: false
     default: ""
   merge-timeout:
@@ -40,6 +53,9 @@ runs:
         FILES: ${{ inputs.files }}
         VERSION: ${{ inputs.version }}
         TAG_PREFIX: ${{ inputs.tag-prefix }}
+        MESSAGE: ${{ inputs.message }}
+        PR_BRANCH: ${{ inputs.branch }}
+        BODY: ${{ inputs.body }}
         MERGE_TIMEOUT: ${{ inputs.merge-timeout }}
         GH_TOKEN: ${{ inputs.token }}
       run: '"${GITHUB_ACTION_PATH}/land.sh"'

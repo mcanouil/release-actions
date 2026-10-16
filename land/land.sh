@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Commits the files of a version bump and lands the commit on the branch of the
-# run, with a push or with a pull request, then checks out the landed commit.
+# Commits files and lands the commit on the branch of the run, with a push or
+# with a pull request, then checks out the landed commit. With a version, the
+# message, the branch and the body of a release are the defaults.
 # The inputs of land/action.yml arrive as environment variables.
 set -euo pipefail
 
@@ -16,6 +17,9 @@ MODE="${MODE:-}"
 FILES="${FILES:-}"
 VERSION="${VERSION:-}"
 TAG_PREFIX="${TAG_PREFIX:-}"
+MESSAGE="${MESSAGE:-}"
+PR_BRANCH="${PR_BRANCH:-}"
+BODY="${BODY:-}"
 BRANCH="${GITHUB_REF_NAME:-}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 MERGE_TIMEOUT="${MERGE_TIMEOUT:-600}"
@@ -29,13 +33,39 @@ case "${MODE}" in
 push | pull-request) ;;
 *) die "mode is '${MODE}'. Use push or pull-request." ;;
 esac
-[[ "${VERSION}" =~ ${VERSION_REGEX} ]] || die "version is '${VERSION}'. Pass the version output of the bump action."
+if [[ -n "${VERSION}" ]]; then
+  [[ "${VERSION}" =~ ${VERSION_REGEX} ]] || die "version is '${VERSION}'. Pass the version output of the bump action."
+elif [[ -z "${MESSAGE}" ]]; then
+  die "message is empty and there is no version. Pass a commit message, or the version of a release."
+fi
 [[ "${TAG_PREFIX}" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '${TAG_PREFIX}'. Use letters, digits, dots, hyphens or underscores."
 [[ -n "${BRANCH}" ]] || die "GITHUB_REF_NAME is not set. Run land in a workflow on a branch."
 [[ "${MERGE_TIMEOUT}" =~ ^[1-9][0-9]*$ ]] || die "merge-timeout is '${MERGE_TIMEOUT}'. Use a number of seconds above 0."
 if [[ "${MODE}" == "pull-request" ]]; then
   require_tools gh
   [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
+  if [[ -z "${PR_BRANCH}" && -z "${VERSION}" ]]; then
+    die "branch is empty and there is no version. Pass the head branch of the pull request."
+  fi
+fi
+
+tag="${TAG_PREFIX}${VERSION}"
+if [[ -n "${VERSION}" ]]; then
+  push_message="${MESSAGE:-ci: release ${tag} [skip ci]}"
+  pr_message="${MESSAGE:-ci: release ${tag}}"
+  PR_BRANCH="${PR_BRANCH:-release/${tag}}"
+  BODY="${BODY:-Automated release of ${tag}.}"
+  landed="the bump of ${tag} with no release"
+  recovery="create the release by hand on the landed commit, or revert it with a pull request and dispatch the workflow again"
+else
+  push_message="${MESSAGE}"
+  pr_message="${MESSAGE}"
+  BODY="${BODY:-${MESSAGE}}"
+  landed="the change"
+  recovery="check it before you dispatch the workflow again"
+fi
+if [[ "${MODE}" == "pull-request" && "${PR_BRANCH}" == "${BRANCH}" ]]; then
+  die "branch is ${PR_BRANCH}, the branch the pull request merges into. Pass another head branch."
 fi
 
 files=()
@@ -55,14 +85,16 @@ if [[ -z "$(git config user.name || true)" || -z "$(git config user.email || tru
   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 fi
 
-tag="${TAG_PREFIX}${VERSION}"
 git add -- "${files[@]}"
 if git diff --cached --quiet; then
-  die "no change in ${files[*]} against HEAD. The bump may already be on ${BRANCH}: check it before you dispatch the workflow again."
+  if [[ -n "${VERSION}" ]]; then
+    die "no change in ${files[*]} against HEAD. The bump may already be on ${BRANCH}: check it before you dispatch the workflow again."
+  fi
+  die "no change in ${files[*]} against HEAD."
 fi
 
 land_push() {
-  git commit -q -m "ci: release ${tag} [skip ci]"
+  git commit -q -m "${push_message}"
   git push -q origin "HEAD:refs/heads/${BRANCH}" ||
     die "the token could not push to ${BRANCH}. If ${BRANCH} moved, dispatch the workflow again. Otherwise add the App to the bypass list of the branch ruleset, or use mode: pull-request."
   git rev-parse HEAD
@@ -70,7 +102,7 @@ land_push() {
 
 # Says what to do when the bump is on the branch but the run cannot go on.
 die_landed() {
-  die "$1 ${BRANCH} holds the bump of ${tag} with no release: create the release by hand on the landed commit, or revert it with a pull request and dispatch the workflow again."
+  die "$1 ${BRANCH} holds ${landed}: ${recovery}."
 }
 
 # Opens the pull request of the bump and prints its URL. A pull request left
@@ -86,7 +118,7 @@ open_pull_request() {
     fi
   fi
   git checkout -q -B "${head}"
-  git commit -q -m "ci: release ${tag}"
+  git commit -q -m "${pr_message}"
   git push -q --force origin "HEAD:refs/heads/${head}" ||
     die "the token could not push ${head}. Check that it has contents: write on ${REPOSITORY}."
   if gh label list --repo "${REPOSITORY}" --limit 1000 --json name --jq '.[].name' | grep -qxF "${LABEL}"; then
@@ -94,7 +126,7 @@ open_pull_request() {
   fi
   # gh prints the pull request URL as the last line of its output.
   gh pr create --repo "${REPOSITORY}" --base "${BRANCH}" --head "${head}" \
-    --title "ci: release ${tag}" --body "Automated release of ${tag}." \
+    --title "${pr_message}" --body "${BODY}" \
     ${labels[@]+"${labels[@]}"} | tail -n 1
 }
 
@@ -104,8 +136,8 @@ land_pull_request() {
   local merge_error="" merge_failed_at=""
   local merge_args=(--repo "${REPOSITORY}" --squash --delete-branch)
 
-  url="$(open_pull_request "release/${tag}")"
-  [[ -n "${url}" ]] || die "gh pr create printed no URL for release/${tag}."
+  url="$(open_pull_request "${PR_BRANCH}")"
+  [[ -n "${url}" ]] || die "gh pr create printed no URL for ${PR_BRANCH}."
 
   # The merge state decides between a direct merge and auto-merge, so it has
   # to be known too.

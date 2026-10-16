@@ -118,7 +118,7 @@ case "$*" in
   line="$(sed -n "${pos}p" "${GH_PR_SCRIPT}")"
   [[ "${line}" != "!fail" ]] || exit 1
   if [[ "${line}" == *"{branch-sha}"* ]]; then
-    sha="$(git --git-dir="${GH_ORIGIN}" rev-parse refs/heads/release/v1.5.0)"
+    sha="$(git --git-dir="${GH_ORIGIN}" rev-parse "refs/heads/${GH_HEAD_BRANCH:-release/v1.5.0}")"
     line="${line/\{branch-sha\}/${sha}}"
   fi
   echo "${line}"

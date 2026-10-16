@@ -123,7 +123,7 @@ run_pr() {
 }
 
 branch_sha() {
-  git -C "${GH_ORIGIN}" rev-parse refs/heads/release/v1.5.0
+  git -C "${GH_ORIGIN}" rev-parse "refs/heads/${GH_HEAD_BRANCH:-release/v1.5.0}"
 }
 
 assert_detached_at() {
@@ -253,3 +253,35 @@ printf 'local\n' >extra.txt
 pr_script 'MERGEABLE|CLEAN' "MERGED|${merged}|CLEAN||0"
 run_pr
 refuses "create the release by hand" "checkout of the merge commit refused"
+
+message='chore: refresh "goldens" for $HOME
+
+Second paragraph.'
+fixture
+run_land VERSION= MESSAGE="${message}"
+assert_status 0 "${STATUS}" "custom push message: ${ERR}"
+assert_eq "${message}" "$(git -C "${GH_ORIGIN}" log -1 --format=%B main | sed '$d')" "custom push message verbatim"
+
+fixture
+export GH_HEAD_BRANCH=ci/update-thumbs
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr VERSION= MESSAGE='ci: update thumbs' PR_BRANCH=ci/update-thumbs BODY='New thumbs.'
+assert_status 0 "${STATUS}" "custom pull request: ${ERR}"
+assert_contains "${LOG}" "--head ci/update-thumbs --title ci: update thumbs --body New thumbs." "custom pull request call"
+assert_eq "ci: update thumbs" "$(git -C "${GH_ORIGIN}" log -1 --format=%s ci/update-thumbs)" "custom pull request commit"
+assert_detached_at "$(branch_sha)" "custom pull request"
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr VERSION= MESSAGE='ci: update thumbs' PR_BRANCH=ci/update-thumbs
+assert_status 0 "${STATUS}" "body defaults to message: ${ERR}"
+assert_contains "${LOG}" "--title ci: update thumbs --body ci: update thumbs" "body defaults to message"
+unset GH_HEAD_BRANCH
+
+fixture
+run_land VERSION=
+refuses_landing "message" "no version and no message"
+run_pr VERSION= MESSAGE='ci: x'
+refuses_landing "branch" "pull request with no branch"
+run_pr MESSAGE='ci: x' PR_BRANCH=main
+refuses_landing "branch" "pull request branch is the base"
