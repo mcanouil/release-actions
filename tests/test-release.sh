@@ -6,43 +6,8 @@ source "${ROOT}/tests/lib.sh"
 script="${ROOT}/release/release.sh"
 sha=0123456789abcdef0123456789abcdef01234567
 export RUNNER_TEMP="${SCRATCH}/tmp" GITHUB_REPOSITORY=o/r GH_LOG="${SCRATCH}/gh.log" GH_TAGS="${SCRATCH}/tags"
-mkdir -p "${RUNNER_TEMP}" "${SCRATCH}/bin" "${SCRATCH}/work/dist"
-export PATH="${SCRATCH}/bin:${PATH}"
-
-cat >"${SCRATCH}/bin/gh" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >>"${GH_LOG}"
-if [[ -n "${GH_DOWN:-}" ]]; then
-  echo "HTTP 401: Bad credentials" >&2
-  exit 1
-fi
-case "$*" in
-"api repos/o/r/git/ref/tags/"*)
-  args="$*"
-  tag="${args#api repos/o/r/git/ref/tags/}"
-  tag="${tag%% *}"
-  grep -qxF "${tag}" "${GH_TAGS}" && exit 0
-  echo "gh: Not Found (HTTP 404)" >&2
-  exit 1
-  ;;
-"api repos/o/r/git/matching-refs/tags/"*)
-  args="$*"
-  prefix="${args#api repos/o/r/git/matching-refs/tags/}"
-  prefix="${prefix%% *}"
-  { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"
-  ;;
-"release view"*"--json"*)
-  printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'
-  ;;
-"release view"*)
-  [[ -n "${GH_RELEASE_EXISTS:-}" ]] && exit 0
-  echo "release not found" >&2
-  exit 1
-  ;;
-*) exit 0 ;;
-esac
-EOF
-chmod +x "${SCRATCH}/bin/gh"
+mkdir -p "${RUNNER_TEMP}" "${SCRATCH}/work/dist"
+install_fake_gh
 
 cd "${SCRATCH}/work"
 body="${SCRATCH}/body.md"

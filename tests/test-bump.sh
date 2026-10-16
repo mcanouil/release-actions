@@ -5,36 +5,9 @@ source "${ROOT}/tests/lib.sh"
 
 script="${ROOT}/bump/bump.sh"
 export RUNNER_TEMP="${SCRATCH}/tmp" GITHUB_REPOSITORY=o/r GH_TAGS="${SCRATCH}/tags"
-mkdir -p "${RUNNER_TEMP}" "${SCRATCH}/bin"
-export PATH="${SCRATCH}/bin:${PATH}"
+mkdir -p "${RUNNER_TEMP}"
 : >"${GH_TAGS}"
-
-# Fake gh: the tags in GH_TAGS exist, GH_RELEASE_EXISTS adds a release, and
-# GH_DOWN fails every call as a network or token error would.
-cat >"${SCRATCH}/bin/gh" <<'EOF'
-#!/usr/bin/env bash
-if [[ -n "${GH_DOWN:-}" ]]; then
-  echo "HTTP 401: Bad credentials" >&2
-  exit 1
-fi
-case "$*" in
-"api repos/o/r/git/ref/tags/"*)
-  args="$*"
-  tag="${args#api repos/o/r/git/ref/tags/}"
-  tag="${tag%% *}"
-  grep -qxF "${tag}" "${GH_TAGS}" && exit 0
-  echo "gh: Not Found (HTTP 404)" >&2
-  exit 1
-  ;;
-"release view"*)
-  [[ -n "${GH_RELEASE_EXISTS:-}" ]] && exit 0
-  echo "release not found" >&2
-  exit 1
-  ;;
-*) exit 1 ;;
-esac
-EOF
-chmod +x "${SCRATCH}/bin/gh"
+install_fake_gh
 
 # Writes a fresh fixture repository at SCRATCH/repo and moves into it.
 fixture() {
