@@ -293,6 +293,7 @@ The next steps, for example a build, use the landed files.
 | `wait` | `true` | Wait until the pull request merges. |
 | `allow-unchanged` | `false` | When the files have no change, stop with success and `changed: false`. |
 | `merge-timeout` | `600` | Seconds to wait for the pull request to merge. |
+| `blocked-after` | `120` | Seconds after which a pull request that is blocked with no check is an error. |
 | `token` | `github.token` | Token for the GitHub API in `pull-request` mode, with `contents: write` and `pull-requests: write`. |
 
 | Output | Description |
@@ -305,7 +306,7 @@ The next steps, for example a build, use the landed files.
 Thus the token of the checkout decides if the push is accepted.
 Give the same token to `actions/checkout` and to `land`.
 
-`land` commits only the paths in `files`.
+`land` commits only the paths in `files`, even if an earlier step staged other files.
 If the files have no change, the step stops with an error, because the bump can already be on the branch.
 A scheduled job that can find nothing to change sets `allow-unchanged: true`.
 
@@ -338,7 +339,8 @@ The token in this table is the token of `actions/checkout`.
 
 A push with the default token starts no workflow.
 As a result, the required checks of the pull request never start, and the merge cannot occur.
-`land` finds this case after 120 seconds and stops with an error.
+`land` finds this case after `blocked-after` seconds, 120 by default, and stops with an error.
+If a required check of the branch starts later than that, raise `blocked-after`.
 
 If a workflow must work with the default token, use `mode: pull-request` on a branch with no required checks.
 

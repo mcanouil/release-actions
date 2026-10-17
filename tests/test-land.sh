@@ -405,3 +405,31 @@ printf 'staged\n' >extra.txt
 git add extra.txt
 run_land
 refuses_landing "no change" "unchanged files with an unrelated staged file"
+
+fixture
+run_pr LAND_BLOCKED_AFTER=abc
+refuses_landing "blocked-after" "bad blocked-after"
+
+fixture
+git checkout -q -b human
+printf 'work in progress\n' >notes.txt
+git add notes.txt
+git commit -q -m "wip: human work"
+git push -q origin HEAD:refs/heads/release/v1.5.0
+human="$(git rev-parse HEAD)"
+git checkout -q main
+git branch -q -D human
+printf 'version: 1.5.0\n' >CITATION.cff
+run_pr
+refuses_landing "release/v1.5.0" "branch that land did not create"
+assert_eq "${human}" "$(branch_sha)" "branch that land did not create is kept"
+
+fixture
+printf 'gen/\n' >.gitignore
+git add .gitignore
+git commit -q -m ignore
+git push -q origin main
+mkdir -p gen
+printf 'out\n' >gen/out.txt
+run_land FILES=gen/out.txt
+refuses_landing "could not stage" "ignored path"

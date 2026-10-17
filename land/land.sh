@@ -45,6 +45,7 @@ fi
 require_tag_prefix "${TAG_PREFIX}"
 [[ -n "${BRANCH}" ]] || die "GITHUB_REF_NAME is not set. Run land in a workflow on a branch."
 [[ "${MERGE_TIMEOUT}" =~ ^[1-9][0-9]*$ ]] || die "merge-timeout is '${MERGE_TIMEOUT}'. Use a number of seconds above 0."
+[[ "${BLOCKED_AFTER}" =~ ^[0-9]+$ ]] || die "blocked-after is '${BLOCKED_AFTER}'. Use a number of seconds."
 case "${MERGE}" in
 auto | none) ;;
 *) die "merge is '${MERGE}'. Use auto or none." ;;
@@ -107,7 +108,8 @@ if [[ -z "$(git config user.name || true)" || -z "$(git config user.email || tru
 fi
 
 # Only the listed paths count and land, whatever an earlier step staged.
-git add -A -- "${files[@]}"
+git add -A -- "${files[@]}" ||
+  die "could not stage ${files[*]}. A path that .gitignore matches cannot land: list another path, or stop ignoring it."
 if git diff --cached --quiet -- "${files[@]}"; then
   if [[ "${ALLOW_UNCHANGED}" == "true" ]]; then
     printf 'No change in %s: nothing to land.\n' "${files[*]}"
@@ -122,7 +124,8 @@ if git diff --cached --quiet -- "${files[@]}"; then
 fi
 
 land_push() {
-  git commit -q -m "${push_message}" -- "${files[@]}"
+  git commit -q -m "${push_message}" -- "${files[@]}" ||
+    die "could not commit ${files[*]}. Check the git setup of the job, such as commit signing."
   git push -q origin "HEAD:refs/heads/${BRANCH}" ||
     die "the token could not push to ${BRANCH}. If ${BRANCH} moved, dispatch the workflow again. Otherwise add the App to the bypass list of the branch ruleset, or use mode: pull-request."
   git rev-parse HEAD
@@ -143,12 +146,20 @@ open_pull_request() {
     open="$(gh pr list --repo "${REPOSITORY}" --head "${head}" --state open --json number,url \
       --jq '.[0] | select(.) | "\(.number) \(.url)"')" ||
       die "could not list the pull requests of ${head}. Check that the token can read ${REPOSITORY}."
+    git fetch -q origin "${head}" || die "could not fetch ${head}."
+    # The branch is force-pushed below, so it must hold nothing but an earlier
+    # commit of land, or commits that are already on the base branch.
+    if [[ -z "${open}" && "$(git log -1 --format=%s FETCH_HEAD)" != "${pr_message%%$'\n'*}" ]] &&
+      ! git merge-base --is-ancestor FETCH_HEAD HEAD; then
+      die "${head} already exists and holds commits that land did not make. Pass another branch, or delete ${head} if nobody needs it."
+    fi
   fi
-  if [[ -n "${open}" ]] && git fetch -q origin "${head}" && git diff --quiet FETCH_HEAD -- "${files[@]}"; then
+  if [[ -n "${open}" ]] && git diff --quiet FETCH_HEAD -- "${files[@]}"; then
     printf 'The pull request of %s already holds these files.\n' "${head}" >&2
   else
     git checkout -q -B "${head}"
-    git commit -q -m "${pr_message}" -- "${files[@]}"
+    git commit -q -m "${pr_message}" -- "${files[@]}" ||
+      die "could not commit ${files[*]}. Check the git setup of the job, such as commit signing."
     git push -q --force origin "HEAD:refs/heads/${head}" ||
       die "the token could not push ${head}. Check that it has contents: write on ${REPOSITORY}."
   fi
