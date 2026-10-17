@@ -82,8 +82,8 @@ case "$*" in
   echo "gh: Not Found (HTTP 404)" >&2
   exit 1
   ;;
-"api repos/o/r/git/matching-refs/tags/"*)
-  args="$*"
+"api repos/o/r/git/matching-refs/tags/"* | "api --paginate repos/o/r/git/matching-refs/tags/"*)
+  args="${*/--paginate /}"
   prefix="${args#api repos/o/r/git/matching-refs/tags/}"
   prefix="${prefix%% *}"
   { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"

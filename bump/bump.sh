@@ -196,7 +196,7 @@ refuse_existing_release "${REPOSITORY}" "${TAG_PREFIX}${version}"
 # run landed; bumping again would skip that version. The tags come from the API,
 # since a checkout holds none by default.
 if [[ "${VERSION_SOURCE}" == "target" ]]; then
-  refs="$(gh api "repos/${REPOSITORY}/git/matching-refs/tags/${TAG_PREFIX}" --jq '.[].ref' 2>&1)" ||
+  refs="$(gh api --paginate "repos/${REPOSITORY}/git/matching-refs/tags/${TAG_PREFIX}" --jq '.[].ref' 2>&1)" ||
     die "could not list the tags of ${REPOSITORY}: ${refs}. Check that the token can read ${REPOSITORY}."
   released="$(printf '%s\n' "${refs//refs\/tags\//}" | highest_version "${TAG_PREFIX}")"
   if [[ -n "${released}" && "${released}" != "${current}" &&
