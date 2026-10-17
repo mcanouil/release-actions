@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- feat: `bump` stops when the files hold a version that a failed run bumped but did not release, so a second run does not skip that version. (#7)
+- feat: `bump` stops when `date` is not a real day, such as `2026-02-30`. (#7)
+- feat: Add the `after-bump` input to `bump`. It runs a command after the version is written, and the files that the command changes go into the `files` output. (#7)
+- feat: `land` stops a release that runs on a branch other than the default branch. Other changes still land on any branch. (#7)
+- feat: Add the `require-app` input to `token`. With `true`, the step stops when no GitHub App is set. (#7)
+- feat: Add the `footer` input to `notes`, a template at the end of the release body. (#7)
+
 ## 1.2.0 (2026-10-17)
 
 - feat: Add the `land` action. It commits a bump or any other change and lands it on the branch, with a push or with a pull request that it can merge.
