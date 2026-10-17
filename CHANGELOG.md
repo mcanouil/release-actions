@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- feat: Add the `base` input to `land`. It sets the branch to land on, for a workflow that runs on a tag, such as on a `release` event.
+
 ## 1.3.0 (2026-10-17)
 
 - feat: `bump` stops when the files hold a version that a failed run bumped but did not release, so a second run does not skip that version. (#7)

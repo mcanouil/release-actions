@@ -24,6 +24,10 @@ inputs:
     description: "Head branch of the pull request. Default: release/<tag-prefix><version>. Required for pull-request without version."
     required: false
     default: ""
+  base:
+    description: "Branch to land on: the target of the push, or the base of the pull request. Default: the branch of the run. Set it when the run is on a tag, such as a release event, and check out this branch first. Not for a release."
+    required: false
+    default: ""
   body:
     description: "Pull request body. Default: the release body, else the message."
     required: false
@@ -82,6 +86,7 @@ runs:
         MESSAGE: ${{ inputs.message }}
         PR_BRANCH: ${{ inputs.branch }}
         BODY: ${{ inputs.body }}
+        BASE: ${{ inputs.base }}
         MERGE: ${{ inputs.merge }}
         MERGE_METHOD: ${{ inputs.merge-method }}
         WAIT: ${{ inputs.wait }}
