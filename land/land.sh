@@ -106,8 +106,9 @@ if [[ -z "$(git config user.name || true)" || -z "$(git config user.email || tru
   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 fi
 
+# Only the listed paths count and land, whatever an earlier step staged.
 git add -A -- "${files[@]}"
-if git diff --cached --quiet; then
+if git diff --cached --quiet -- "${files[@]}"; then
   if [[ "${ALLOW_UNCHANGED}" == "true" ]]; then
     printf 'No change in %s: nothing to land.\n' "${files[*]}"
     set_output changed false
@@ -121,7 +122,7 @@ if git diff --cached --quiet; then
 fi
 
 land_push() {
-  git commit -q -m "${push_message}"
+  git commit -q -m "${push_message}" -- "${files[@]}"
   git push -q origin "HEAD:refs/heads/${BRANCH}" ||
     die "the token could not push to ${BRANCH}. If ${BRANCH} moved, dispatch the workflow again. Otherwise add the App to the bypass list of the branch ruleset, or use mode: pull-request."
   git rev-parse HEAD
@@ -134,7 +135,8 @@ die_landed() {
 
 # Pushes the head branch and prints the URL of its pull request. An open pull
 # request on the branch, from an earlier run, is updated rather than replaced,
-# so its review comments stay.
+# so its review comments stay, and its branch is left alone when it already
+# holds the same files, so its approvals and checks stay too.
 open_pull_request() {
   local head="$1" open="" labels=()
   if git ls-remote --exit-code --heads origin "${head}" >/dev/null 2>&1; then
@@ -142,10 +144,14 @@ open_pull_request() {
       --jq '.[0] | select(.) | "\(.number) \(.url)"')" ||
       die "could not list the pull requests of ${head}. Check that the token can read ${REPOSITORY}."
   fi
-  git checkout -q -B "${head}"
-  git commit -q -m "${pr_message}"
-  git push -q --force origin "HEAD:refs/heads/${head}" ||
-    die "the token could not push ${head}. Check that it has contents: write on ${REPOSITORY}."
+  if [[ -n "${open}" ]] && git fetch -q origin "${head}" && git diff --quiet FETCH_HEAD -- "${files[@]}"; then
+    printf 'The pull request of %s already holds these files.\n' "${head}" >&2
+  else
+    git checkout -q -B "${head}"
+    git commit -q -m "${pr_message}" -- "${files[@]}"
+    git push -q --force origin "HEAD:refs/heads/${head}" ||
+      die "the token could not push ${head}. Check that it has contents: write on ${REPOSITORY}."
+  fi
   if [[ -n "${open}" ]]; then
     gh pr edit "${open%% *}" --repo "${REPOSITORY}" --title "${pr_message}" --body "${BODY}" >&2 ||
       die "could not update the pull request #${open%% *} of ${head}."

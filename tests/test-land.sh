@@ -379,3 +379,29 @@ assert_status 0 "${STATUS}" "directory and deletions: ${ERR}"
 assert_eq "D	c.txt
 D	goldens/a.png
 M	goldens/b.png" "$(git -C "${GH_ORIGIN}" diff --name-status main~1 main | LC_ALL=C sort)" "directory and deletions landed"
+
+fixture
+git checkout -q -b proposed
+git commit -q -am "ci: release v1.5.0, from an earlier run"
+git push -q origin HEAD:refs/heads/release/v1.5.0
+proposed="$(git rev-parse HEAD)"
+git checkout -q main
+git branch -q -D proposed
+printf 'version: 1.5.0\n' >CITATION.cff
+run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3' MERGE=none
+assert_status 0 "${STATUS}" "open pull request with the same content: ${ERR}"
+assert_eq "${proposed}" "$(branch_sha)" "same content leaves the pull request branch alone"
+
+fixture
+printf 'staged\n' >extra.txt
+git add extra.txt
+run_land
+assert_status 0 "${STATUS}" "unrelated staged file: ${ERR}"
+assert_eq "CITATION.cff" "$(git -C "${GH_ORIGIN}" diff --name-only main~1 main)" "only the listed files land"
+
+fixture
+git checkout -q -- CITATION.cff
+printf 'staged\n' >extra.txt
+git add extra.txt
+run_land
+refuses_landing "no change" "unchanged files with an unrelated staged file"
