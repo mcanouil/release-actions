@@ -433,3 +433,15 @@ run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='printf "x\n" >staged.tx
 assert_status 0 "${STATUS}" "after-bump with earlier changes: ${ERR}"
 assert_eq $'CHANGELOG.md\nCITATION.cff\nREADME.md\n_extensions/demo/_extension.yml\nstaged.txt\ntypst.toml' \
   "$(multiline_output files "${OUT}")" "after-bump files leave earlier changes out"
+
+# A missing tool is named before the date check needs perl.
+fixture
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" PATH="$(path_without perl)"
+refuses "perl is not on PATH" "missing perl"
+
+# Paths outside ASCII reach the files output unquoted.
+fixture
+git_fixture
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='printf "x\n" >café.txt'
+assert_status 0 "${STATUS}" "after-bump with a non-ASCII path: ${ERR}"
+assert_contains "$(multiline_output files "${OUT}")" "café.txt" "unquoted non-ASCII path"

@@ -111,6 +111,6 @@ fi
 
 length="$(perl -CI -0777 -ne 'print length' <"${body}")"
 if [[ "${length}" -gt ${MAX_LENGTH} ]]; then
-  die "the release body is ${length} characters, and GitHub allows ${MAX_LENGTH}. Shorten the section or the header, or turn off generate-notes."
+  die "the release body is ${length} characters, and GitHub allows ${MAX_LENGTH}. Shorten the section, the header or the footer, or turn off generate-notes."
 fi
 set_output body-file "${body}"

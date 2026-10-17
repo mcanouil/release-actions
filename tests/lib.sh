@@ -147,3 +147,19 @@ esac
 EOF
   chmod +x "${SCRATCH}/bin/gh"
 }
+
+# Prints a PATH value with the commands that the scripts use, except TOOL, to
+# test the message for a missing tool.
+path_without() {
+  local dir="${SCRATCH}/no-$1" name found
+  if [[ ! -d "${dir}" ]]; then
+    mkdir -p "${dir}"
+    for name in awk bash basename cat cksum comm cut date dirname env find gh git grep head jq ln \
+      mkdir mktemp mv perl rm sed sort tail tr uname wc yq; do
+      [[ "${name}" != "$1" ]] || continue
+      found="$(command -v "${name}")" || continue
+      ln -s "${found}" "${dir}/${name}"
+    done
+  fi
+  printf '%s\n' "${dir}"
+}

@@ -24,12 +24,12 @@ REPOSITORY="${GITHUB_REPOSITORY:-}"
 placeholder_regex='\{(version|date|major)\}'
 
 [[ -n "${BUMP}" ]] || die "bump is empty. Use patch, minor, major, calver, or a version such as 1.2.3."
+require_tools perl yq gh
 RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 # Said when the files already hold a version that a failed run bumped.
 unreleased_hint="Create release {version} on the commit that bumped it, or revert that commit with a pull request, then dispatch again."
 require_bool allow-empty "${ALLOW_EMPTY}"
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
-require_tools perl yq gh
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
 require_tag_prefix "${TAG_PREFIX}"
 
@@ -217,7 +217,8 @@ fi
 # content, or "-" for a deleted path.
 tree_state() {
   local path
-  { git diff --name-only HEAD && git ls-files --others --exclude-standard; } | LC_ALL=C sort -u |
+  { git -c core.quotePath=false diff --name-only HEAD &&
+    git -c core.quotePath=false ls-files --others --exclude-standard; } | LC_ALL=C sort -u |
     while IFS= read -r path; do
       if [[ -e "${path}" ]]; then
         printf '%s %s\n' "${path}" "$(git hash-object -- "${path}")"

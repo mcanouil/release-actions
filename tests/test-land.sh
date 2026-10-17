@@ -444,3 +444,9 @@ refuses_landing "a release lands on main, and this run is on feature" "default b
 run_land GITHUB_REF_NAME=feature VERSION= MESSAGE='ci: refresh goldens'
 assert_status 0 "${STATUS}" "change off the default branch: ${ERR}"
 assert_eq "ci: refresh goldens" "$(git -C "${GH_ORIGIN}" log -1 --format=%s feature)" "change pushed to feature"
+
+# Without jq, the default branch comes from the API.
+fixture
+run_land PATH="$(path_without jq)"
+assert_status 0 "${STATUS}" "release without jq: ${ERR}"
+assert_contains "$(cat "${GH_LOG}")" "api repos/o/r --jq .default_branch" "API fallback without jq"

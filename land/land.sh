@@ -84,11 +84,11 @@ else
   recovery="check it before you dispatch the workflow again"
 fi
 # A release tags what it lands, so it lands on the default branch only. The
-# event payload names that branch; the API answers when there is no payload.
+# event payload names that branch; the API answers when there is no payload or
+# no jq.
 if [[ -n "${VERSION}" ]]; then
   default_branch=""
-  if [[ -n "${GITHUB_EVENT_PATH:-}" && -f "${GITHUB_EVENT_PATH}" ]]; then
-    require_tools jq
+  if [[ -n "${GITHUB_EVENT_PATH:-}" && -f "${GITHUB_EVENT_PATH}" ]] && command -v jq >/dev/null; then
     default_branch="$(jq -r '.repository.default_branch // empty' "${GITHUB_EVENT_PATH}")" ||
       die "could not read ${GITHUB_EVENT_PATH}, the event payload of the run."
   fi
