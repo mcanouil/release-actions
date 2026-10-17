@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 1.3.0 (2026-10-17)
+
 - feat: `bump` stops when the files hold a version that a failed run bumped but did not release, so a second run does not skip that version. (#7)
 - feat: `bump` stops when `date` is not a real day, such as `2026-02-30`. (#7)
 - feat: Add the `after-bump` input to `bump`. It runs a command after the version is written, and the files that the command changes go into the `files` output. (#7)
