@@ -25,7 +25,7 @@ inputs:
     required: false
     default: ""
   base:
-    description: "Branch to land on: the target of the push, or the base of the pull request. Default: the branch of the run. Set it when the run is on a tag, such as a release event. Not for a release."
+    description: "Branch to land on: the target of the push, or the base of the pull request. Default: the branch of the run. Set it when the run is on a tag, such as a release event, and check out this branch first. Not for a release."
     required: false
     default: ""
   body:

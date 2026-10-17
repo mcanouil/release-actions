@@ -316,6 +316,7 @@ If the workflow runs on another branch, the step stops before it commits.
 Without a `version`, `land` commits on any branch.
 Set `base` to land on another branch than the branch of the workflow.
 Use it when the workflow runs on a tag, for example on a `release` event.
+Check out `base` before `land`, for example with the `ref` input of `actions/checkout`: `land` stops when `HEAD` does not build on `base`, or when `base` does not exist.
 A release cannot have a `base`.
 
 With a `version`, `land` uses the defaults of a release, where `<tag>` is `<tag-prefix><version>`:

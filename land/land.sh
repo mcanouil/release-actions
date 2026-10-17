@@ -123,6 +123,15 @@ done <<<"${FILES}"
 git symbolic-ref -q HEAD >/dev/null ||
   die "HEAD is not on a branch. Check out ${BRANCH} before land."
 
+# A base that origin lacks would be created by the push, and a HEAD that does
+# not build on it would bring other commits into the pull request.
+if [[ -n "${BASE}" ]]; then
+  git fetch -q origin "refs/heads/${BASE}" 2>/dev/null ||
+    die "base is ${BASE}, which origin does not have. Pass the name of an existing branch, such as main."
+  git merge-base --is-ancestor FETCH_HEAD HEAD ||
+    die "HEAD does not build on ${BASE}. Check out ${BASE} before land, for example with the ref input of actions/checkout."
+fi
+
 if [[ -z "$(git config user.name || true)" || -z "$(git config user.email || true)" ]]; then
   git config user.name 'github-actions[bot]'
   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

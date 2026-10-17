@@ -476,3 +476,16 @@ refuses_landing "the branch the pull request merges into" "head branch equal to 
 fixture
 run_land BASE=main
 refuses_landing "base" "release with a base"
+
+fixture
+run_land VERSION= MESSAGE='ci: update docs' BASE=mian
+refuses_landing "base is mian, which origin does not have" "missing base"
+if git -C "${GH_ORIGIN}" rev-parse -q --verify refs/heads/mian >/dev/null; then
+  printf '  missing base: created the branch\n' >&2
+  exit 1
+fi
+
+fixture
+seed_commit --allow-empty -m moved
+run_pr VERSION= MESSAGE='ci: update docs' PR_BRANCH=ci/docs BASE=main
+refuses "does not build on main" "HEAD behind base"
