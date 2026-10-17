@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - feat: `land` stops a release that runs on a branch other than the default branch. Other changes still land on any branch. (#7)
 - feat: Add the `require-app` input to `token`. With `true`, the step stops when no GitHub App is set. (#7)
 - feat: Add the `footer` input to `notes`, a template at the end of the release body. (#7)
+- fix: `release` reads every page of tags before it moves a rolling tag, so a repository with more than 30 tags under `vX` no longer moves it back. (#7)
 
 ## 1.2.0 (2026-10-17)
 
