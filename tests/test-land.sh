@@ -489,3 +489,8 @@ fixture
 seed_commit --allow-empty -m moved
 run_pr VERSION= MESSAGE='ci: update docs' PR_BRANCH=ci/docs BASE=main
 refuses "does not build on main" "HEAD behind base"
+
+fixture
+git remote set-url origin "${SCRATCH}/gone.git"
+run_land VERSION= MESSAGE='ci: update docs' BASE=main
+refuses_landing "could not read the branches of origin" "unreadable origin"
