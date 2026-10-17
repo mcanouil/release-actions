@@ -366,3 +366,56 @@ run_bump BUMP=minor TARGETS="${TARGETS_ALL}" GITHUB_REPOSITORY=
 refuses "GITHUB_REPOSITORY is not set" "no repository"
 run_bump BUMP=minor TARGETS="${TARGETS_ALL}" TAG_PREFIX=a/b
 refuses "tag-prefix is 'a/b'" "bad tag-prefix"
+
+# A bump that landed with no release stops the next one (target source; the
+# tags come from the API, since a checkout holds no tags by default).
+fixture
+before="$(tree_sum)"
+printf '1.4.1\n' >"${GH_TAGS}"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}"
+refuses "typst.toml holds 1.4.2, which has no release" "unreleased bump"
+assert_contains "${ERR}" "Create release 1.4.2 on the commit that bumped it" "unreleased bump hint"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged after an unreleased bump"
+printf 'v1.4.1\n' >"${GH_TAGS}"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" TAG_PREFIX=v
+refuses "holds 1.4.2, which has no release" "unreleased bump with a prefix"
+assert_contains "${ERR}" "Create release v1.4.2" "hint names the tag"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}"
+assert_status 0 "${STATUS}" "tags of another prefix only: ${ERR}"
+fixture
+printf '1.4.2\n' >"${GH_TAGS}"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}"
+assert_status 0 "${STATUS}" "current version released: ${ERR}"
+fixture
+: >"${GH_TAGS}"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}"
+assert_status 0 "${STATUS}" "first release: ${ERR}"
+
+# With the tag source, a second run works out the same version again.
+fixture
+git_fixture
+git tag 1.4.2
+run_bump BUMP=minor VERSION_SOURCE=tag TARGETS="${TARGETS_ALL}"
+assert_status 0 "${STATUS}" "tag source first run: ${ERR}"
+run_bump BUMP=minor VERSION_SOURCE=tag TARGETS="${TARGETS_ALL}"
+refuses "already has the heading '## 1.5.0 (2026-10-15)'" "tag source second run"
+assert_contains "${ERR}" "revert that commit with a pull request" "tag source second run hint"
+
+# after-bump runs after the writes, and its files join the files output.
+fixture
+git_fixture
+printf '{"version": "1.4.2"}\n' >package-lock.json
+git add -A
+git commit -q -m files
+# shellcheck disable=SC2016 # after-bump expands the variables, not this shell.
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" \
+  AFTER_BUMP='sed -i.bak "s/1.4.2/${VERSION}/" package-lock.json && rm package-lock.json.bak && printf "%s %s %s\n" "${VERSION}" "${DATE}" "${MAJOR}" >new.txt'
+assert_status 0 "${STATUS}" "after-bump: ${ERR}"
+assert_eq "1.5.0 2026-10-15 1" "$(cat new.txt)" "after-bump environment"
+assert_eq '{"version": "1.5.0"}' "$(cat package-lock.json)" "after-bump ran after the writes"
+assert_eq $'CHANGELOG.md\nCITATION.cff\nREADME.md\n_extensions/demo/_extension.yml\nnew.txt\npackage-lock.json\ntypst.toml' \
+  "$(multiline_output files "${OUT}")" "after-bump files"
+fixture
+git_fixture
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='echo boom >&2; exit 3'
+refuses "after-bump failed: echo boom >&2; exit 3" "failing after-bump"

@@ -19,11 +19,14 @@ TAG_PREFIX="${TAG_PREFIX:-}"
 CHANGELOG="${CHANGELOG-CHANGELOG.md}"
 CHANGELOG_HEADING="${CHANGELOG_HEADING:-${DEFAULT_CHANGELOG_HEADING}}"
 ALLOW_EMPTY="${ALLOW_EMPTY:-false}"
+AFTER_BUMP="${AFTER_BUMP:-}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 placeholder_regex='\{(version|date|major)\}'
 
 [[ -n "${BUMP}" ]] || die "bump is empty. Use patch, minor, major, calver, or a version such as 1.2.3."
 RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
+# Said when the files already hold a version that a failed run bumped.
+unreleased_hint="Create release {version} on the commit that bumped it, or revert that commit with a pull request, then dispatch again."
 require_bool allow-empty "${ALLOW_EMPTY}"
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
 require_tools perl yq gh
@@ -174,20 +177,33 @@ if [[ -n "${CHANGELOG}" ]]; then
   3) die "${CHANGELOG} has more than one Unreleased heading. Keep one." ;;
   *) die "could not read ${CHANGELOG}." ;;
   esac
-  if [[ -z "$(tr -d '[:space:]' <"${notes_file}")" && "${ALLOW_EMPTY}" != "true" ]]; then
-    die "the Unreleased section of ${CHANGELOG} is empty. Add entries under it, or set allow-empty: true."
-  fi
   status=0
   perl "${LIB}/section.pl" version "${CHANGELOG}" "${CHANGELOG_HEADING}" "${version}" >/dev/null || status=$?
   case "${status}" in
   2) ;;
-  0 | 3) die "${CHANGELOG} already has the heading '${heading}'. Was this version released already?" ;;
+  0 | 3) die "${CHANGELOG} already has the heading '${heading}'. If release ${TAG_PREFIX}${version} does not exist, a run bumped it and failed. ${unreleased_hint/\{version\}/${TAG_PREFIX}${version}}" ;;
   *) die "could not read ${CHANGELOG}." ;;
   esac
+  if [[ -z "$(tr -d '[:space:]' <"${notes_file}")" && "${ALLOW_EMPTY}" != "true" ]]; then
+    die "the Unreleased section of ${CHANGELOG} is empty. Add entries under it, or set allow-empty: true."
+  fi
 fi
 
 # The release step checks this too, but only after the bump has landed.
 refuse_existing_release "${REPOSITORY}" "${TAG_PREFIX}${version}"
+
+# Files that hold a version above the latest release hold a bump that a failed
+# run landed; bumping again would skip that version. The tags come from the API,
+# since a checkout holds none by default.
+if [[ "${VERSION_SOURCE}" == "target" ]]; then
+  refs="$(gh api "repos/${REPOSITORY}/git/matching-refs/tags/${TAG_PREFIX}" --jq '.[].ref' 2>&1)" ||
+    die "could not list the tags of ${REPOSITORY}: ${refs}. Check that the token can read ${REPOSITORY}."
+  released="$(printf '%s\n' "${refs//refs\/tags\//}" | highest_version "${TAG_PREFIX}")"
+  if [[ -n "${released}" && "${released}" != "${current}" &&
+    "$(printf '%s\n%s\n' "${released}" "${current}" | highest_version "")" == "${current}" ]]; then
+    die "${source_files} holds ${current}, which has no release. ${unreleased_hint/\{version\}/${TAG_PREFIX}${current}}"
+  fi
+fi
 
 # Writes.
 export VERSION="${version}" DATE="${RELEASE_DATE}" MAJOR="${major}"
@@ -197,7 +213,14 @@ done
 if [[ -n "${CHANGELOG}" ]]; then
   HEADING="${heading}" perl "${LIB}/section.pl" roll "${CHANGELOG}"
 fi
-files="$(printf '%s\n' ${e_file[@]+"${e_file[@]}"} ${CHANGELOG:+"${CHANGELOG}"} | LC_ALL=C sort -u | sed '/^$/d')"
+changed=""
+if [[ -n "${AFTER_BUMP}" ]]; then
+  bash -euo pipefail -c "${AFTER_BUMP}" ||
+    die "after-bump failed: ${AFTER_BUMP}. The version is written but nothing is committed; fix the command and dispatch again."
+  changed="$(git diff --name-only && git ls-files --others --exclude-standard)" ||
+    die "could not list the files that after-bump changed. Run bump in a git checkout."
+fi
+files="$(printf '%s\n' ${e_file[@]+"${e_file[@]}"} ${CHANGELOG:+"${CHANGELOG}"} "${changed}" | LC_ALL=C sort -u | sed '/^$/d')"
 
 set_output version "${version}"
 set_output previous "${current}"

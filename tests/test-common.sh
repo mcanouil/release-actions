@@ -26,3 +26,9 @@ assert_eq "1.2.3" "$(output_value version "${GITHUB_OUTPUT}")" "single-line outp
 assert_eq $'a.txt\nb.txt' "$(multiline_output files "${GITHUB_OUTPUT}")" "multi-line output"
 
 assert_eq "/runner/tmp" "$(RUNNER_TEMP=/runner/tmp temp_dir)" "temp_dir prefers RUNNER_TEMP"
+
+assert_eq "2028-02-29" "$(release_date 2028-02-29)" "leap day"
+for bad in 2026-02-29 2026-02-30 2026-13-01 2026-04-31; do
+  err="$( (release_date "${bad}") 2>&1)" || true
+  assert_contains "${err}" "not a calendar date" "calendar check ${bad}"
+done

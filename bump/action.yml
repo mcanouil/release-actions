@@ -29,6 +29,10 @@ inputs:
     description: "Release even when the Unreleased section is empty."
     required: false
     default: "false"
+  after-bump:
+    description: "Bash command run after the version is written, with VERSION, DATE and MAJOR set, such as a lock file update. The files it changes join the files output."
+    required: false
+    default: ""
   date:
     description: "Release date, YYYY-MM-DD. Default: today in UTC."
     required: false
@@ -75,6 +79,7 @@ runs:
         CHANGELOG: ${{ inputs.changelog }}
         CHANGELOG_HEADING: ${{ inputs.changelog-heading }}
         ALLOW_EMPTY: ${{ inputs.allow-empty }}
+        AFTER_BUMP: ${{ inputs.after-bump }}
         RELEASE_DATE: ${{ inputs.date }}
         GH_TOKEN: ${{ inputs.token }}
       run: '"${GITHUB_ACTION_PATH}/bump.sh"'

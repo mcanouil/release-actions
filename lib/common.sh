@@ -71,6 +71,10 @@ require_tag_prefix() {
 release_date() {
   local value="${1:-$(date -u +%Y-%m-%d)}"
   [[ "${value}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "date is '${value}'. Use YYYY-MM-DD."
+  DATE_VALUE="${value}" perl -MTime::Local=timegm -e '
+    my ($y, $m, $d) = split /-/, $ENV{DATE_VALUE};
+    exit(eval { timegm(0, 0, 0, $d, $m - 1, $y); 1 } ? 0 : 1);
+  ' || die "date is '${value}', which is not a calendar date. Use a real day in YYYY-MM-DD."
   printf '%s\n' "${value}"
 }
 
