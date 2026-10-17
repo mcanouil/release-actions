@@ -28,7 +28,7 @@ require_bool allow-empty "${ALLOW_EMPTY}"
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
 require_tools perl yq gh
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
-[[ "${TAG_PREFIX}" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '${TAG_PREFIX}'. Use letters, digits, dots, hyphens or underscores."
+require_tag_prefix "${TAG_PREFIX}"
 
 # Targets, as four lists with one entry per target.
 t_file=()
@@ -93,6 +93,17 @@ done
 # Every (file, pattern) pair to rewrite.
 e_file=()
 e_pattern=()
+
+# Prints PATTERN as the line it expects, without its anchors, such as
+# "version: X.Y.Z" for "^version: {version}$".
+expected_line() {
+  local line="${1#^}"
+  line="${line%$}"
+  line="${line//\{version\}/X.Y.Z}"
+  line="${line//\{date\}/YYYY-MM-DD}"
+  printf '%s\n' "${line//\{major\}/X}"
+}
+
 for ((i = 0; i < n; i++)); do
   matched_files=0
   while IFS= read -r path; do
@@ -103,7 +114,7 @@ for ((i = 0; i < n; i++)); do
       if [[ "${t_required[i]}" == "false" ]]; then
         continue
       fi
-      die "${path}: no match for the pattern '${t_pattern[i]}'. Fix the pattern, or set required: false on this target."
+      die "${path}: no line matches '${t_pattern[i]}'. Add a line such as '$(expected_line "${t_pattern[i]}")', or set required: false on this target if the file can lack it."
     fi
     e_file+=("${path}")
     e_pattern+=("${t_pattern[i]}")

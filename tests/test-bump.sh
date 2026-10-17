@@ -229,7 +229,19 @@ fixture
 run_bump BUMP=patch TARGETS="${TARGETS_ALL}
 - file: typst.toml
   pattern: 'absent@{version}'"
-refuses "typst.toml: no match for the pattern 'absent@{version}'" "required target with no match"
+refuses "typst.toml: no line matches 'absent@{version}'. Add a line such as 'absent@X.Y.Z', or set required: false" "required target with no match"
+
+fixture
+sed -i.bak 's/^version: 1.4.2$/version: "1.4.2"/' CITATION.cff
+rm -f CITATION.cff.bak
+run_bump BUMP=patch TARGETS="${TARGETS_ALL}"
+refuses "CITATION.cff: no line matches '^version: {version}\$'. Add a line such as 'version: X.Y.Z', or set required: false" "quoted version line"
+
+fixture
+run_bump BUMP=patch TARGETS="${TARGETS_ALL}
+- file: typst.toml
+  pattern: '^released = {date} for v{major}\$'"
+refuses "Add a line such as 'released = YYYY-MM-DD for vX'" "date and major in the expected line"
 
 fixture
 run_bump BUMP=patch TARGETS="- file: typst.toml

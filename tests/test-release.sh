@@ -121,3 +121,12 @@ assert_contains "${LOG}" "api --method PATCH repos/o/r/git/refs/tags/v1.5 -f sha
 
 run_release VERSION=1.5.0-rc.1 ROLLING=true
 refuses_release "rolling needs a release version" "rolling with a text suffix"
+
+run_release VERSION=2026.10.16-2 RELEASE_DATE=2026-10-16 TITLE='{date}{count}'
+assert_status 0 "${STATUS}" "count: ${ERR}"
+assert_contains "${LOG}" "--title 2026-10-16 (2) --notes-file" "count on a second release of the day"
+run_release VERSION=2026.10.16 RELEASE_DATE=2026-10-16 TITLE='{date}{count}'
+assert_status 0 "${STATUS}" "count, first of the day: ${ERR}"
+assert_contains "${LOG}" "--title 2026-10-16 --notes-file" "count on the first release of the day"
+run_release TITLE='{tag}{count}'
+assert_contains "${LOG}" "--title 1.5.0 --notes-file" "count on a semantic version"

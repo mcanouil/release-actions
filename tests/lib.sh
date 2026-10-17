@@ -51,7 +51,15 @@ refuses() {
 # Puts a fake gh first on PATH, for repository o/r. The tags in GH_TAGS (one
 # per line) exist, GH_RELEASE_EXISTS adds a release, GH_DOWN fails every call
 # as a token or network error would, GH_RELEASE_DOWN fails only the release
-# lookup, and GH_LOG, when set, records each call.
+# lookup, and GH_LOG, when set, records each call. Every App bot has the user
+# id 123, and every token belongs to octo, with the user id 456.
+# For pull requests: GH_STALE_PR is the open pull request of the head branch,
+# as "<number> <url>",
+# GH_LABELS a file of label names, GH_MERGE_FAILS fails gh pr merge, and each
+# gh pr view prints the next line of the file GH_PR_SCRIPT, repeating the last
+# one. A line "!fail" fails that call, and {branch-sha} stands for the commit
+# of GH_HEAD_BRANCH (default release/v1.5.0) in the bare repository
+# GH_ORIGIN.
 install_fake_gh() {
   mkdir -p "${SCRATCH}/bin"
   export PATH="${SCRATCH}/bin:${PATH}"
@@ -79,6 +87,12 @@ case "$*" in
   prefix="${prefix%% *}"
   { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"
   ;;
+"api /users/"*)
+  echo 123
+  ;;
+"api /user "*)
+  echo "octo 456"
+  ;;
 "release view"*"--json"*)
   printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'
   ;;
@@ -90,6 +104,35 @@ case "$*" in
   [[ -n "${GH_RELEASE_EXISTS:-}" ]] && exit 0
   echo "release not found" >&2
   exit 1
+  ;;
+"pr list"*)
+  [[ -z "${GH_STALE_PR:-}" ]] || echo "${GH_STALE_PR}"
+  ;;
+"pr create"*)
+  echo "Creating pull request"
+  echo "https://github.com/o/r/pull/7"
+  ;;
+"pr view"*)
+  pos=$(($(cat "${GH_PR_SCRIPT}.pos" 2>/dev/null || echo 0) + 1))
+  total=$(wc -l <"${GH_PR_SCRIPT}")
+  [[ ${pos} -le ${total} ]] || pos=${total}
+  echo "${pos}" >"${GH_PR_SCRIPT}.pos"
+  line="$(sed -n "${pos}p" "${GH_PR_SCRIPT}")"
+  [[ "${line}" != "!fail" ]] || exit 1
+  if [[ "${line}" == *"{branch-sha}"* ]]; then
+    sha="$(git --git-dir="${GH_ORIGIN}" rev-parse "refs/heads/${GH_HEAD_BRANCH:-release/v1.5.0}")"
+    line="${line/\{branch-sha\}/${sha}}"
+  fi
+  echo "${line}"
+  ;;
+"pr merge"*)
+  if [[ -n "${GH_MERGE_FAILS:-}" ]]; then
+    echo "Auto-merge is not allowed for this repository" >&2
+    exit 1
+  fi
+  ;;
+"label list"*)
+  [[ -z "${GH_LABELS:-}" ]] || cat "${GH_LABELS}"
   ;;
 *) exit 0 ;;
 esac

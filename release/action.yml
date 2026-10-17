@@ -13,7 +13,7 @@ inputs:
     description: "The release body, usually the body-file output of notes."
     required: true
   title:
-    description: "Title of the release. Placeholders: {tag}, {version}, {date}."
+    description: "Title of the release. Placeholders: {tag}, {version}, {date}, and {count}, which is ' (N)' for the CalVer release YYYY.MM.DD-N and empty otherwise."
     required: false
     default: "{tag}"
   date:

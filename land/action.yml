@@ -1,0 +1,92 @@
+name: Land
+description: Commit files and land them on the branch, with a push or a pull request. A version gives the message, branch and body of a release.
+
+inputs:
+  mode:
+    description: "push to commit straight to the branch, or pull-request to open and merge a pull request."
+    required: true
+  files:
+    description: "Paths to commit, one per line, usually the files output of bump."
+    required: true
+  version:
+    description: "The version of a release, usually the version output of bump. It gives the defaults of message, branch and body."
+    required: false
+    default: ""
+  tag-prefix:
+    description: "The commit names the release <tag-prefix><version>."
+    required: false
+    default: ""
+  message:
+    description: "Commit message and pull request title, used verbatim. Required without version."
+    required: false
+    default: ""
+  branch:
+    description: "Head branch of the pull request. Default: release/<tag-prefix><version>. Required for pull-request without version."
+    required: false
+    default: ""
+  body:
+    description: "Pull request body. Default: the release body, else the message."
+    required: false
+    default: ""
+  merge:
+    description: "auto merges the pull request, or turns on auto-merge when checks block it. none only opens or updates it."
+    required: false
+    default: "auto"
+  merge-method:
+    description: "squash or merge."
+    required: false
+    default: "squash"
+  wait:
+    description: "Wait until the pull request merges. With false, sha is empty."
+    required: false
+    default: "true"
+  allow-unchanged:
+    description: "When the files have no change, succeed with changed=false instead of failing."
+    required: false
+    default: "false"
+  merge-timeout:
+    description: "Seconds to wait for the pull request to merge. Only for pull-request."
+    required: false
+    default: "600"
+  blocked-after:
+    description: "Seconds after which a pull request that is blocked with no check is an error. Raise it when a required check starts late."
+    required: false
+    default: "120"
+  token:
+    description: "Token for the GitHub API, with contents: write and pull-requests: write. Only pull-request uses it: git pushes with the credentials of actions/checkout."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  sha:
+    description: "The landed commit. Empty when nothing landed, or when land did not wait for the merge."
+    value: ${{ steps.land.outputs.sha }}
+  changed:
+    description: "true when the files had a change to land, else false."
+    value: ${{ steps.land.outputs.changed }}
+  pull-request:
+    description: "URL of the pull request, in pull-request mode."
+    value: ${{ steps.land.outputs.pull-request }}
+
+runs:
+  using: composite
+  steps:
+    - name: Land the bump
+      id: land
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        FILES: ${{ inputs.files }}
+        VERSION: ${{ inputs.version }}
+        TAG_PREFIX: ${{ inputs.tag-prefix }}
+        MESSAGE: ${{ inputs.message }}
+        PR_BRANCH: ${{ inputs.branch }}
+        BODY: ${{ inputs.body }}
+        MERGE: ${{ inputs.merge }}
+        MERGE_METHOD: ${{ inputs.merge-method }}
+        WAIT: ${{ inputs.wait }}
+        ALLOW_UNCHANGED: ${{ inputs.allow-unchanged }}
+        MERGE_TIMEOUT: ${{ inputs.merge-timeout }}
+        LAND_BLOCKED_AFTER: ${{ inputs.blocked-after }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: '"${GITHUB_ACTION_PATH}/land.sh"'

@@ -1,8 +1,10 @@
 #!/usr/bin/env perl
 # Fills {name} placeholders in the text on standard input.
 #
-#   fill.pl NAMES  NAMES is a comma-separated list of the allowed names. The
-#                  value of {name} is the FILL_name environment variable.
+#   fill.pl NAMES [OPTIONAL]
+#     NAMES is a comma-separated list of the allowed names. The value of
+#     {name} is the FILL_name environment variable. OPTIONAL is a
+#     comma-separated list of the names whose value can be empty.
 #
 # Exits 2 and lists the names when the text holds a placeholder outside NAMES,
 # and 3 when an allowed placeholder has an empty value. A {name} right after a
@@ -11,6 +13,7 @@ use strict;
 use warnings;
 
 my %allowed = map { $_ => 1 } grep { $_ ne '' } split /,/, ($ARGV[0] // '');
+my %optional = map { $_ => 1 } grep { $_ ne '' } split /,/, ($ARGV[1] // '');
 my $text = do { local $/; <STDIN> };
 
 my $placeholder = qr/(?<!\$)\{([a-z][a-z0-9-]*)\}/;
@@ -22,7 +25,7 @@ while ($text =~ /$placeholder/g) {
     next;
   }
   my $value = $ENV{"FILL_$name"};
-  $empty{$name} = 1 unless defined $value && $value ne '';
+  $empty{$name} = 1 unless $optional{$name} || (defined $value && $value ne '');
 }
 
 if (%unknown) {
@@ -34,5 +37,5 @@ if (%empty) {
   exit 3;
 }
 
-$text =~ s/$placeholder/$ENV{"FILL_$1"}/g;
+$text =~ s/$placeholder/$ENV{"FILL_$1"} \/\/ ''/ge;
 print $text;

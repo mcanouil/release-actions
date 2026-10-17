@@ -1,13 +1,13 @@
 # Release Actions
 
-Three composite GitHub Actions that release a repository from its changelog.
+Five composite GitHub Actions that release a repository from its changelog.
 
+- `token` picks the token of the workflow: a GitHub App token, a token that you give, or the default token.
+  It also sets the git identity that matches this token.
 - `bump` writes the next version to your files and turns the `## Unreleased` section of `CHANGELOG.md` into the section of the new version.
 - `notes` makes the release body from a header template, that changelog section, and the notes that GitHub generates.
+- `land` commits the bump and lands it on the branch, with a push or with a pull request that it merges.
 - `release` creates the GitHub release and, on request, moves the rolling `vX` and `vX.Y` tags.
-
-The actions do not commit or push.
-Your workflow lands the commit between `bump` and `release`, with a push or with a pull request.
 
 ## Requirements
 
@@ -19,11 +19,25 @@ On other runners, install `yq` v4 and `gh` before the first step.
 ## Example
 
 ```yaml
+- name: Get the token
+  id: token
+  uses: mcanouil/release-actions/token@v1
+  with:
+    app-id: ${{ vars.APP_ID }}
+    app-key: ${{ secrets.APP_KEY }}
+
+- name: Check out the repository
+  uses: actions/checkout@v7
+  with:
+    fetch-depth: 0
+    token: ${{ steps.token.outputs.token }}
+
 - name: Bump the version
   id: bump
   uses: mcanouil/release-actions/bump@v1
   with:
     bump: minor
+    token: ${{ steps.token.outputs.token }}
     targets: |
       - file: CITATION.cff
         pattern: '^version: {version}$'
@@ -32,18 +46,14 @@ On other runners, install `yq` v4 and `gh` before the first step.
       - file: package.json
         pattern: '^  "version": "{version}",$'
 
-- name: Commit and push
-  id: push
-  shell: bash
-  env:
-    VERSION: ${{ steps.bump.outputs.version }}
-    FILES: ${{ steps.bump.outputs.files }}
-  run: |
-    set -euo pipefail
-    printf '%s\n' "${FILES}" | git add --pathspec-from-file=-
-    git commit -m "ci: release ${VERSION} [skip ci]"
-    git push origin "HEAD:${GITHUB_REF_NAME}"
-    echo "sha=$(git rev-parse HEAD)" >>"${GITHUB_OUTPUT}"
+- name: Land the bump
+  id: land
+  uses: mcanouil/release-actions/land@v1
+  with:
+    mode: push
+    files: ${{ steps.bump.outputs.files }}
+    version: ${{ steps.bump.outputs.version }}
+    token: ${{ steps.token.outputs.token }}
 
 - name: Make the release body
   id: notes
@@ -52,16 +62,50 @@ On other runners, install `yq` v4 and `gh` before the first step.
     notes-file: ${{ steps.bump.outputs.notes-file }}
     version: ${{ steps.bump.outputs.version }}
     tag: ${{ steps.bump.outputs.version }}
-    target: ${{ steps.push.outputs.sha }}
+    target: ${{ steps.land.outputs.sha }}
     generate-notes: true
+    token: ${{ steps.token.outputs.token }}
 
 - name: Create the release
   uses: mcanouil/release-actions/release@v1
   with:
     version: ${{ steps.bump.outputs.version }}
     body-file: ${{ steps.notes.outputs.body-file }}
-    target: ${{ steps.push.outputs.sha }}
+    target: ${{ steps.land.outputs.sha }}
+    token: ${{ steps.token.outputs.token }}
 ```
+
+## token
+
+`token` picks one token for all the steps of a job, in this order:
+
+1. A GitHub App token, if you give `app-id` and `app-key`.
+2. The value of `token`, for example a personal access token.
+3. The default token, `github.token`.
+
+If you give `app-id` without `app-key`, the step writes a warning and does not use the App.
+The step never stops because a credential is missing, because the default token is always available.
+
+`token` also sets the global git identity:
+
+- For an App, the identity is the bot of the App, such as `my-app[bot]`.
+- For a token that you give, the identity is the owner of the token.
+- For the default token, the identity is `github-actions[bot]`.
+
+If GitHub does not answer the lookup of the App bot or of the owner, the identity is `github-actions[bot]`, and the step writes a warning.
+
+Give the `token` output to `actions/checkout`, because `land` pushes with the credentials that checkout keeps.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `app-id` | `''` | Client id of the GitHub App. |
+| `app-key` | `''` | Private key of the GitHub App. |
+| `token` | `''` | Token to use when there is no App. |
+
+| Output | Description |
+| --- | --- |
+| `token` | The token that the step picked. |
+| `source` | Where the token comes from: `app`, `token` or `default`. |
 
 ## bump
 
@@ -204,6 +248,102 @@ If the header contains an unknown placeholder, or a placeholder without a value,
 
 The body must be 125,000 characters or less, which is the GitHub limit.
 
+## land
+
+`land` commits files on the branch of the workflow.
+It lands a release bump, or any other change that a workflow makes, such as rendered files or refreshed test snapshots.
+The `mode` input sets how the commit gets to the branch.
+
+With a `version`, `land` uses the defaults of a release, where `<tag>` is `<tag-prefix><version>`:
+
+- The push message is `ci: release <tag> [skip ci]`.
+  `[skip ci]` stops the checks from running again on the same tree.
+- The pull request message is `ci: release <tag>`, without `[skip ci]`, because the required checks of the pull request must run.
+- The branch is `release/<tag>`, and the body is `Automated release of <tag>.`.
+
+Without a `version`, give `message`, and `branch` for `mode: pull-request`.
+`land` uses `message` verbatim, as the commit message and the pull request title.
+
+With `mode: push`, `land` commits and pushes to the branch of the workflow.
+
+With `mode: pull-request`, `land` does these steps:
+
+1. It commits on `branch`, and force-pushes this branch.
+2. If a pull request is open for this branch, `land` updates its title and body.
+   Otherwise, it opens a pull request, with the label `Type: CI/CD :robot:` if the repository has this label.
+3. With `merge: auto`, it merges the pull request with `merge-method` and deletes the branch.
+   If checks block the merge, it turns on auto-merge.
+   With `merge: none`, it stops here.
+4. With `wait: true`, it waits until the pull request merges, for `merge-timeout` seconds at most.
+
+After `land` has a landed commit, the working tree is at this commit, with a detached `HEAD`.
+The next steps, for example a build, use the landed files.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `mode` | (required) | `push` or `pull-request`. |
+| `files` | (required) | Paths to commit, one per line: files or directories. A tracked file that the workflow deleted is a change. |
+| `version` | `''` | The version of a release, usually the `version` output of `bump`. |
+| `tag-prefix` | `''` | Prefix of the release name in the default message and branch. |
+| `message` | release message | Commit message and pull request title. Required without `version`. |
+| `branch` | `release/<tag>` | Head branch of the pull request. Required for `pull-request` without `version`. |
+| `body` | release body, else `message` | Pull request body. |
+| `merge` | `auto` | `auto` or `none`. |
+| `merge-method` | `squash` | `squash` or `merge`. |
+| `wait` | `true` | Wait until the pull request merges. |
+| `allow-unchanged` | `false` | When the files have no change, stop with success and `changed: false`. |
+| `merge-timeout` | `600` | Seconds to wait for the pull request to merge. |
+| `blocked-after` | `120` | Seconds after which a pull request that is blocked with no check is an error. |
+| `token` | `github.token` | Token for the GitHub API in `pull-request` mode, with `contents: write` and `pull-requests: write`. |
+
+| Output | Description |
+| --- | --- |
+| `sha` | The landed commit. It is empty when nothing landed, with `merge: none`, and with `wait: false`. |
+| `changed` | `true` when the files had a change, else `false`. |
+| `pull-request` | URL of the pull request, in `pull-request` mode. |
+
+`land` pushes with the credentials that `actions/checkout` keeps, in both modes.
+Thus the token of the checkout decides if the push is accepted.
+Give the same token to `actions/checkout` and to `land`.
+
+`land` commits only the paths in `files`, even if an earlier step staged other files.
+If the files have no change, the step stops with an error, because the bump can already be on the branch.
+A scheduled job that can find nothing to change sets `allow-unchanged: true`.
+
+This step refreshes generated files through a pull request that waits for a review:
+
+```yaml
+- name: Propose the refreshed snapshots
+  uses: mcanouil/release-actions/land@v1
+  with:
+    mode: pull-request
+    files: tests/snapshots
+    message: "test: refresh the snapshots"
+    branch: ci/refresh-snapshots
+    merge: none
+    allow-unchanged: true
+    token: ${{ steps.token.outputs.token }}
+```
+
+### Modes and tokens
+
+The rules of the branch decide which token can land the bump in each mode.
+The token in this table is the token of `actions/checkout`.
+
+| Mode and branch | App on the bypass list | Your token | Default token |
+| --- | --- | --- | --- |
+| `push`, the branch requires a pull request | lands | lands only if the owner can bypass the rule | refused |
+| `push`, no rule on the branch | lands | lands | lands |
+| `pull-request`, no required checks | lands | lands | lands |
+| `pull-request`, required checks | lands | lands | blocked |
+
+A push with the default token starts no workflow.
+As a result, the required checks of the pull request never start, and the merge cannot occur.
+`land` finds this case after `blocked-after` seconds, 120 by default, and stops with an error.
+If a required check of the branch starts later than that, raise `blocked-after`.
+
+If a workflow must work with the default token, use `mode: pull-request` on a branch with no required checks.
+
 ## release
 
 `release` creates the GitHub release of a version.
@@ -214,7 +354,7 @@ GitHub creates the tag as a lightweight tag on `target`.
 | `version` | (required) | The version to release, usually the `version` output of `bump`. |
 | `tag-prefix` | `''` | The tag is `<tag-prefix><version>`. |
 | `body-file` | (required) | The release body, usually the `body-file` output of `notes`. |
-| `title` | `{tag}` | Title of the release. Placeholders: `{tag}`, `{version}`, `{date}`. |
+| `title` | `{tag}` | Title of the release. Placeholders: `{tag}`, `{version}`, `{date}`, `{count}`. |
 | `date` | today in UTC | Value of `{date}` in the title, `YYYY-MM-DD`. |
 | `target` | `github.sha` | Commit to tag. |
 | `assets` | `''` | Globs of the files to attach, one per line. Add `#label` to a line to give a label. |
@@ -230,6 +370,9 @@ GitHub creates the tag as a lightweight tag on `target`.
 | `url` | URL of the release. |
 | `release-id` | Numeric identifier of the release. |
 
+In the title, `{count}` is empty for a version such as `2026.10.16`, and a space then `(2)` for `2026.10.16-2`.
+Thus `title: "{date}{count}"` gives `2026-10-16` for the first release of a day, and `2026-10-16 (2)` for the second one.
+
 If the tag or the release already exists, the step stops before it creates anything.
 Each asset glob must match at least one file.
 
@@ -244,23 +387,9 @@ If a ruleset protects the tags or the default branch, use a GitHub App token tha
 
 ## Recipes
 
-### Push to the default branch
-
-The example above pushes the bump commit to the default branch.
-The default branch usually requires a pull request.
-In this case, give the push a GitHub App token, and add the App to the bypass list of the ruleset.
-Use `[skip ci]` in the commit message so that the checks do not run again on the same tree.
-
-### Pull request with automerge
-
-1. Run `bump`.
-2. Commit the changes on a new branch, and open a pull request.
-3. Turn on automerge for the pull request, and wait until it merges.
-4. Run `notes` and `release` with `target` set to the merge commit.
-
 ### Draft release
 
-1. Run `bump`, commit and push.
+1. Run `bump`, then `land`.
 2. Run `notes`.
 3. Run `release` with `draft: true`, and keep `rolling` at `false`.
 4. Publish the draft in a later workflow, for example after an external registry accepts the package.
