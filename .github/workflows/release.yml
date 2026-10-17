@@ -75,6 +75,8 @@ jobs:
               pattern: 'mcanouil/release-actions/land@v{major}'
             - file: README.md
               pattern: 'mcanouil/release-actions/token@v{major}'
+            - file: .github/workflows/release.yml
+              pattern: 'mcanouil/release-actions/token@v{major}'
 
       # The App is exempt from the pull request rule of the default branch.
       - name: Land the version
