@@ -213,12 +213,29 @@ done
 if [[ -n "${CHANGELOG}" ]]; then
   HEADING="${heading}" perl "${LIB}/section.pl" roll "${CHANGELOG}"
 fi
+# Prints each path that differs from HEAD, staged or not, with the hash of its
+# content, or "-" for a deleted path.
+tree_state() {
+  local path
+  { git diff --name-only HEAD && git ls-files --others --exclude-standard; } | LC_ALL=C sort -u |
+    while IFS= read -r path; do
+      if [[ -e "${path}" ]]; then
+        printf '%s %s\n' "${path}" "$(git hash-object -- "${path}")"
+      else
+        printf '%s -\n' "${path}"
+      fi
+    done
+}
+
+# Only what after-bump changes joins files: earlier steps of the job can leave
+# other changes in the tree.
 changed=""
 if [[ -n "${AFTER_BUMP}" ]]; then
+  before="$(tree_state)" || die "could not read the state of the tree before after-bump. Run bump in a git checkout."
   bash -euo pipefail -c "${AFTER_BUMP}" ||
     die "after-bump failed: ${AFTER_BUMP}. The version is written but nothing is committed; fix the command and dispatch again."
-  changed="$(git diff --name-only && git ls-files --others --exclude-standard)" ||
-    die "could not list the files that after-bump changed. Run bump in a git checkout."
+  after="$(tree_state)" || die "could not list the files that after-bump changed."
+  changed="$(LC_ALL=C comm -13 <(printf '%s\n' "${before}") <(printf '%s\n' "${after}") | sed 's/ [^ ]*$//')"
 fi
 files="$(printf '%s\n' ${e_file[@]+"${e_file[@]}"} ${CHANGELOG:+"${CHANGELOG}"} "${changed}" | LC_ALL=C sort -u | sed '/^$/d')"
 

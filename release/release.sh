@@ -108,7 +108,7 @@ rolling_tags=()
 if [[ "${ROLLING}" == "true" ]]; then
   for ref in "${TAG_PREFIX}$(version_major "${VERSION}")" "${TAG_PREFIX}$(version_minor "${VERSION}")"; do
     # A backport must not move the rolling tag back from a higher release.
-    released="$(gh api "repos/${REPOSITORY}/git/matching-refs/tags/${ref}." --jq '.[].ref')" ||
+    released="$(gh api --paginate "repos/${REPOSITORY}/git/matching-refs/tags/${ref}." --jq '.[].ref')" ||
       die "could not list the tags under ${ref}. Check that the token can read ${REPOSITORY}."
     highest="$(printf '%s\n' "${released//refs\/tags\//}" | highest_version "${TAG_PREFIX}")"
     top="$(printf '%s\n%s\n' "${highest}" "${VERSION}" | highest_version "")"

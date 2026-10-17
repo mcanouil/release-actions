@@ -419,3 +419,17 @@ fixture
 git_fixture
 run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='echo boom >&2; exit 3'
 refuses "after-bump failed: echo boom >&2; exit 3" "failing after-bump"
+
+# after-bump adds only what the command changed, not earlier changes, and
+# counts what the command staged.
+fixture
+git_fixture
+printf 'clean\n' >dirty.txt
+git add -A
+git commit -q -m files
+printf 'changed before bump\n' >dirty.txt
+printf 'left by a build\n' >junk.txt
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='printf "x\n" >staged.txt && git add staged.txt'
+assert_status 0 "${STATUS}" "after-bump with earlier changes: ${ERR}"
+assert_eq $'CHANGELOG.md\nCITATION.cff\nREADME.md\n_extensions/demo/_extension.yml\nstaged.txt\ntypst.toml' \
+  "$(multiline_output files "${OUT}")" "after-bump files leave earlier changes out"

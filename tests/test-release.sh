@@ -130,3 +130,9 @@ assert_status 0 "${STATUS}" "count, first of the day: ${ERR}"
 assert_contains "${LOG}" "--title 2026-10-16 --notes-file" "count on the first release of the day"
 run_release TITLE='{tag}{count}'
 assert_contains "${LOG}" "--title 1.5.0 --notes-file" "count on a semantic version"
+
+# The tag lookup reads every page: v1.39.0 is not on the first page of 30.
+TAGS="$(for minor in $(seq 0 39); do printf 'v1.%s.0\n' "${minor}"; done)" \
+  run_release VERSION=1.38.1 TAG_PREFIX=v ROLLING=true
+assert_status 0 "${STATUS}" "many tags: ${ERR}"
+assert_contains "${ERR}" "v1 stays on v1.39.0" "many tags keep v1 on the highest release"

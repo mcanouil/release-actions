@@ -83,10 +83,14 @@ case "$*" in
   exit 1
   ;;
 "api repos/o/r/git/matching-refs/tags/"* | "api --paginate repos/o/r/git/matching-refs/tags/"*)
-  args="${*/--paginate /}"
+  args="$*"
+  args="${args/--paginate /}"
   prefix="${args#api repos/o/r/git/matching-refs/tags/}"
   prefix="${prefix%% *}"
-  { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"
+  # The API sorts the refs by name and serves 30 per page.
+  pages=(head -n 30)
+  [[ "$*" != *--paginate* ]] || pages=(cat)
+  { grep "^${prefix}" "${GH_TAGS}" || true; } | LC_ALL=C sort | "${pages[@]}" | sed "s|^|refs/tags/|"
   ;;
 "api repos/o/r --jq .default_branch"*)
   echo "${GH_DEFAULT_BRANCH:-main}"
