@@ -38,29 +38,19 @@ jobs:
           echo "::error::Releases are cut from ${DEFAULT_BRANCH}, not ${REF_NAME}."
           exit 1
 
-      - name: Create GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v3
+      # The released action, not ./token: the checkout below needs its token.
+      - name: Get the token
+        id: token
+        uses: mcanouil/release-actions/token@v1
         with:
-          client-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_KEY }}
+          app-id: ${{ vars.APP_ID }}
+          app-key: ${{ secrets.APP_KEY }}
 
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Set up the Git user
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          user_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          token: ${{ steps.token.outputs.token }}
 
       - name: Bump the version
         id: bump
@@ -69,7 +59,7 @@ jobs:
           bump: ${{ inputs.bump }}
           version-source: tag
           tag-prefix: v
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.token.outputs.token }}
           targets: |
             - file: CITATION.cff
               pattern: '^version: {version}$'
@@ -95,7 +85,7 @@ jobs:
           files: ${{ steps.bump.outputs.files }}
           version: ${{ steps.bump.outputs.version }}
           tag-prefix: v
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.token.outputs.token }}
 
       - name: Compose the release body
         id: notes
@@ -106,7 +96,7 @@ jobs:
           tag: v${{ steps.bump.outputs.version }}
           target: ${{ steps.land.outputs.sha }}
           generate-notes: true
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.token.outputs.token }}
 
       - name: Create the release
         uses: ./release
@@ -117,4 +107,4 @@ jobs:
           target: ${{ steps.land.outputs.sha }}
           latest: true
           rolling: true
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.token.outputs.token }}
