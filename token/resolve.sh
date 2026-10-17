@@ -13,6 +13,8 @@ source "${LIB}/common.sh"
 APP_ID="${APP_ID:-}"
 APP_KEY="${APP_KEY:-}"
 PROVIDED_TOKEN="${PROVIDED_TOKEN:-}"
+REQUIRE_APP="${REQUIRE_APP:-false}"
+require_bool require-app "${REQUIRE_APP}"
 
 if [[ -n "${APP_ID}" && -n "${APP_KEY}" ]]; then
   source=app
@@ -30,4 +32,7 @@ else
   fi
 fi
 
+if [[ "${REQUIRE_APP}" == "true" && "${source}" != "app" ]]; then
+  die "require-app is true, but no App is set. Set the APP_ID variable and the APP_KEY secret, then dispatch again."
+fi
 set_output source "${source}"

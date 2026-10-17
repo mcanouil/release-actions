@@ -48,7 +48,8 @@ refuses() {
   assert_contains "${ERR}" "$1" "$2 message"
 }
 
-# Puts a fake gh first on PATH, for repository o/r. The tags in GH_TAGS (one
+# Puts a fake gh first on PATH, for repository o/r, whose default branch is
+# GH_DEFAULT_BRANCH (default main). The tags in GH_TAGS (one
 # per line) exist, GH_RELEASE_EXISTS adds a release, GH_DOWN fails every call
 # as a token or network error would, GH_RELEASE_DOWN fails only the release
 # lookup, and GH_LOG, when set, records each call. Every App bot has the user
@@ -81,11 +82,18 @@ case "$*" in
   echo "gh: Not Found (HTTP 404)" >&2
   exit 1
   ;;
-"api repos/o/r/git/matching-refs/tags/"*)
+"api repos/o/r/git/matching-refs/tags/"* | "api --paginate repos/o/r/git/matching-refs/tags/"*)
   args="$*"
+  args="${args/--paginate /}"
   prefix="${args#api repos/o/r/git/matching-refs/tags/}"
   prefix="${prefix%% *}"
-  { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"
+  # The API sorts the refs by name and serves 30 per page.
+  pages=(head -n 30)
+  [[ "$*" != *--paginate* ]] || pages=(cat)
+  { grep "^${prefix}" "${GH_TAGS}" || true; } | LC_ALL=C sort | "${pages[@]}" | sed "s|^|refs/tags/|"
+  ;;
+"api repos/o/r --jq .default_branch"*)
+  echo "${GH_DEFAULT_BRANCH:-main}"
   ;;
 "api /users/"*)
   echo 123
@@ -138,4 +146,20 @@ case "$*" in
 esac
 EOF
   chmod +x "${SCRATCH}/bin/gh"
+}
+
+# Prints a PATH value with the commands that the scripts use, except TOOL, to
+# test the message for a missing tool.
+path_without() {
+  local dir="${SCRATCH}/no-$1" name found
+  if [[ ! -d "${dir}" ]]; then
+    mkdir -p "${dir}"
+    for name in awk bash basename cat cksum comm cut date dirname env find gh git grep head jq ln \
+      mkdir mktemp mv perl rm sed sort tail tr uname wc yq; do
+      [[ "${name}" != "$1" ]] || continue
+      found="$(command -v "${name}")" || continue
+      ln -s "${found}" "${dir}/${name}"
+    done
+  fi
+  printf '%s\n' "${dir}"
 }

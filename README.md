@@ -9,6 +9,30 @@ Five composite GitHub Actions that release a repository from its changelog.
 - `land` commits the bump and lands it on the branch, with a push or with a pull request that it merges.
 - `release` creates the GitHub release and, on request, moves the rolling `vX` and `vX.Y` tags.
 
+## Release flow
+
+A release job uses the actions in this order.
+The labels show the outputs that the next steps read.
+The `sha` output of `land` is the target of `notes` and `release`.
+
+```mermaid
+flowchart TD
+  dispatch(["workflow_dispatch on the default branch"]) --> token
+  token["token<br/>App, else your token, else the default token;<br/>sets the git identity"]
+  token -- "token" --> checkout["actions/checkout"]
+  checkout --> bump["bump<br/>writes the version, rolls the changelog,<br/>runs after-bump"]
+  bump -- "version, files" --> land["land<br/>commits, then pushes or merges a pull request;<br/>checks out the landed commit"]
+  land -- "sha" --> build["your build steps, if any"]
+  build --> notes["notes<br/>header, changelog section,<br/>generated notes, footer"]
+  notes -- "body-file" --> release["release<br/>tag on sha, rolling tags"]
+```
+
+The actions stop a release that is not safe, so a workflow does not need its own checks for these cases:
+
+- `land` stops a release that runs on a branch other than the default branch.
+- `bump` stops when the files hold a version that a failed run bumped but did not release.
+- `token` with `require-app: true` stops when no GitHub App is set.
+
 ## Requirements
 
 The actions run on the GitHub-hosted Ubuntu and macOS runners.
@@ -84,7 +108,9 @@ On other runners, install `yq` v4 and `gh` before the first step.
 3. The default token, `github.token`.
 
 If you give `app-id` without `app-key`, the step writes a warning and does not use the App.
-The step never stops because a credential is missing, because the default token is always available.
+By default, the step does not stop when a credential is missing, because the default token is always available.
+If the workflow must push as the App, set `require-app: true`.
+Then the step stops when no App is set.
 
 `token` also sets the global git identity:
 
@@ -101,6 +127,7 @@ Give the `token` output to `actions/checkout`, because `land` pushes with the cr
 | `app-id` | `''` | Client id of the GitHub App. |
 | `app-key` | `''` | Private key of the GitHub App. |
 | `token` | `''` | Token to use when there is no App. |
+| `require-app` | `false` | `true` stops the step when no App is set. |
 
 | Output | Description |
 | --- | --- |
@@ -116,6 +143,13 @@ One of these checks looks for the tag `<tag-prefix><version>` and for a release 
 If one of them exists, or if GitHub does not answer, the step stops.
 `release` does the same check, but at that time the bump is already on the default branch.
 
+`bump` also stops when the files hold a version that has no release, and the repository has an earlier release.
+A failed run that landed its bump leaves the files in this state.
+Another bump would skip that version.
+To continue, create the release of that version on the commit that bumped it.
+Alternatively, revert that commit with a pull request, and dispatch the workflow again.
+`bump` reads the tags through the GitHub API, because a checkout holds no tags by default.
+
 | Input | Default | Description |
 | --- | --- | --- |
 | `bump` | (required) | `patch`, `minor`, `major`, `calver`, or an explicit version such as `1.2.3`. |
@@ -125,7 +159,8 @@ If one of them exists, or if GitHub does not answer, the step stops.
 | `changelog` | `CHANGELOG.md` | Path of the changelog. An empty string turns off the changelog roll. |
 | `changelog-heading` | `## {version} ({date})` | Heading that the Unreleased section becomes. |
 | `allow-empty` | `false` | Release when the Unreleased section is empty. |
-| `date` | today in UTC | Release date, `YYYY-MM-DD`. |
+| `after-bump` | `''` | Bash command that `bump` runs after it writes the version. |
+| `date` | today in UTC | Release date, `YYYY-MM-DD`. It must be a real day. |
 | `token` | `github.token` | Token for the GitHub API. Only a token with `contents: write` sees draft releases. |
 
 | Output | Description |
@@ -202,6 +237,26 @@ The `bump` input sets the next version:
 - An explicit version, such as `2.0.0`, becomes the next version.
   It must be different from the current version.
 
+### After the bump
+
+`after-bump` runs a bash command after `bump` writes the version and rolls the changelog.
+Use it for a file that a tool must write, such as a lock file.
+The command gets the environment variables `VERSION`, `DATE` and `MAJOR`.
+The files that the command changes or adds go into the `files` output, so `land` commits them.
+If the command fails, the step stops, and nothing is committed.
+
+```yaml
+- name: Bump the version
+  id: bump
+  uses: mcanouil/release-actions/bump@v1
+  with:
+    bump: minor
+    after-bump: npm install --package-lock-only --ignore-scripts
+    targets: |
+      - file: package.json
+        pattern: '^  "version": "{version}",$'
+```
+
 ### Changelog
 
 `bump` finds the `## Unreleased` or `## [Unreleased]` heading in the changelog.
@@ -224,6 +279,7 @@ It does not change the repository.
 | `changelog` | `CHANGELOG.md` | Path of the changelog. `notes` reads it only without `notes-file`. |
 | `changelog-heading` | `## {version} ({date})` | Form of the version headings. `notes` reads it only without `notes-file`. |
 | `header` | `''` | Template file at the start of the body. |
+| `footer` | `''` | Template file at the end of the body. |
 | `section-heading` | `## Changelog` | Heading above the changelog section. An empty string removes it. |
 | `date` | today in UTC | Value of `{date}` in the header, `YYYY-MM-DD`. |
 | `generate-notes` | `false` | Add the notes that GitHub generates at the end of the body. |
@@ -236,15 +292,15 @@ It does not change the repository.
 | --- | --- |
 | `body-file` | Path of the release body. |
 
-The body has three parts, in this order: the header, the section heading with the changelog section, and the generated notes.
+The body has four parts, in this order: the header, the section heading with the changelog section, the generated notes, and the footer.
 A blank line separates the parts.
 `notes` removes empty parts.
 If the changelog section is empty, `notes` also removes the section heading.
 
-The header can contain the placeholders `{version}`, `{tag}`, `{date}` and `{repository}`.
+The header and the footer can contain the placeholders `{version}`, `{tag}`, `{date}` and `{repository}`.
 A placeholder is a lower-case name in braces.
 A name in braces after a `$`, such as `${VERSION}`, is shell text, and `notes` keeps it.
-If the header contains an unknown placeholder, or a placeholder without a value, the step stops with an error.
+If a template contains an unknown placeholder, or a placeholder without a value, the step stops with an error.
 
 The body must be 125,000 characters or less, which is the GitHub limit.
 
@@ -253,6 +309,11 @@ The body must be 125,000 characters or less, which is the GitHub limit.
 `land` commits files on the branch of the workflow.
 It lands a release bump, or any other change that a workflow makes, such as rendered files or refreshed test snapshots.
 The `mode` input sets how the commit gets to the branch.
+
+With a `version`, `land` lands a release only on the default branch of the repository.
+If the workflow runs on another branch, the step stops before it commits.
+`land` reads the default branch from the event of the workflow.
+Without a `version`, `land` commits on any branch.
 
 With a `version`, `land` uses the defaults of a release, where `<tag>` is `<tag-prefix><version>`:
 
@@ -323,6 +384,26 @@ This step refreshes generated files through a pull request that waits for a revi
     merge: none
     allow-unchanged: true
     token: ${{ steps.token.outputs.token }}
+```
+
+This diagram shows the decisions of `land`:
+
+```mermaid
+flowchart TD
+  start(["land"]) --> staged{"Do the files change?"}
+  staged -- "no, allow-unchanged" --> unchanged(["changed=false, empty sha"])
+  staged -- "no" --> stop(["error: nothing to land"])
+  staged -- "yes" --> mode{"mode"}
+  mode -- "push" --> push["commit, push to the branch"]
+  push --> done(["check out sha, changed=true"])
+  mode -- "pull-request" --> branch["commit on the head branch;<br/>update an open pull request"]
+  branch --> merge{"merge"}
+  merge -- "none" --> open(["pull-request URL, empty sha"])
+  merge -- "auto" --> merged["merge now, or turn on auto-merge"]
+  merged --> wait{"wait"}
+  wait -- "false" --> nowait(["empty sha"])
+  wait -- "true" --> poll["wait for the merge,<br/>up to merge-timeout"]
+  poll --> done
 ```
 
 ### Modes and tokens

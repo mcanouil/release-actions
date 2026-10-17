@@ -170,3 +170,11 @@ out="${SCRATCH}/out"
 status=0
 LC_ALL=C GITHUB_OUTPUT="${out}" RELEASE_DATE=2026-10-15 NOTES_FILE="${SCRATCH}/accents.md" SECTION_HEADING='' "${script}" 2>/dev/null || status=$?
 assert_status 0 "${status}" "multi-byte body under the limit"
+
+# Footer: last, after the generated notes.
+printf 'Install {tag}.\n' >"${SCRATCH}/footer.md"
+run_notes NOTES_FILE="${notes}" GENERATE_NOTES=true TAG=v1.5.0 TARGET=abc123 FOOTER="${SCRATCH}/footer.md"
+assert_status 0 "${STATUS}" "footer: ${ERR}"
+assert_eq $'## Changelog\n\n- feat: Next thing. (#7)\n\n## Generated\n\n* feat: thing by @someone\n\nInstall v1.5.0.' "${BODY}" "footer appended last"
+run_notes NOTES_FILE="${notes}" FOOTER="${SCRATCH}/absent-footer.md"
+refuses "footer ${SCRATCH}/absent-footer.md does not exist" "missing footer"

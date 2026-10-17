@@ -22,6 +22,10 @@ inputs:
     description: "Template file put first. Placeholders: {version}, {tag}, {date}, {repository}."
     required: false
     default: ""
+  footer:
+    description: "Template file put last, after the generated notes. Placeholders: {version}, {tag}, {date}, {repository}."
+    required: false
+    default: ""
   section-heading:
     description: "Heading above the changelog section. An empty string omits it."
     required: false
@@ -68,6 +72,7 @@ runs:
         CHANGELOG: ${{ inputs.changelog }}
         CHANGELOG_HEADING: ${{ inputs.changelog-heading }}
         HEADER: ${{ inputs.header }}
+        FOOTER: ${{ inputs.footer }}
         SECTION_HEADING: ${{ inputs.section-heading }}
         RELEASE_DATE: ${{ inputs.date }}
         GENERATE_NOTES: ${{ inputs.generate-notes }}

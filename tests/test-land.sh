@@ -8,6 +8,7 @@ export GITHUB_REPOSITORY=o/r GH_LOG="${SCRATCH}/gh.log" GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_GLOBAL="${SCRATCH}/gitconfig" GH_ORIGIN="${SCRATCH}/origin.git"
 : >"${GIT_CONFIG_GLOBAL}"
 install_fake_gh
+printf '{"repository":{"default_branch":"main"}}\n' >"${SCRATCH}/event.json"
 
 # Commits the staged changes of SCRATCH/seed as another contributor, with the
 # git commit arguments, and pushes them to main of the bare origin.
@@ -45,7 +46,7 @@ run_land() {
   : >"${OUT}"
   : >"${GH_LOG}"
   STATUS=0
-  ERR="$(env GITHUB_OUTPUT="${OUT}" GITHUB_REF_NAME=main MODE=push FILES=CITATION.cff \
+  ERR="$(env GITHUB_OUTPUT="${OUT}" GITHUB_EVENT_PATH="${SCRATCH}/event.json" GITHUB_REF_NAME=main MODE=push FILES=CITATION.cff \
     VERSION=1.5.0 TAG_PREFIX=v GH_TOKEN=t "$@" "${script}" 2>&1 >/dev/null)" || STATUS=$?
 }
 
@@ -433,3 +434,19 @@ mkdir -p gen
 printf 'out\n' >gen/out.txt
 run_land FILES=gen/out.txt
 refuses_landing "could not stage" "ignored path"
+
+# A release lands only on the default branch; other changes land anywhere.
+fixture
+run_land GITHUB_REF_NAME=feature
+refuses_landing "a release lands on main, and this run is on feature" "release off the default branch"
+run_land GITHUB_EVENT_PATH= GITHUB_REF_NAME=feature
+refuses_landing "a release lands on main, and this run is on feature" "default branch from the API"
+run_land GITHUB_REF_NAME=feature VERSION= MESSAGE='ci: refresh goldens'
+assert_status 0 "${STATUS}" "change off the default branch: ${ERR}"
+assert_eq "ci: refresh goldens" "$(git -C "${GH_ORIGIN}" log -1 --format=%s feature)" "change pushed to feature"
+
+# Without jq, the default branch comes from the API.
+fixture
+run_land PATH="$(path_without jq)"
+assert_status 0 "${STATUS}" "release without jq: ${ERR}"
+assert_contains "$(cat "${GH_LOG}")" "api repos/o/r --jq .default_branch" "API fallback without jq"

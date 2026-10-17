@@ -28,16 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Refuse to release anything but the default branch
-        if: ${{ github.ref_name != github.event.repository.default_branch }}
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          REF_NAME: ${{ github.ref_name }}
-        shell: bash
-        run: |
-          echo "::error::Releases are cut from ${DEFAULT_BRANCH}, not ${REF_NAME}."
-          exit 1
-
       # The released action, not ./token: the checkout below needs its token.
       - name: Get the token
         id: token
@@ -45,6 +35,7 @@ jobs:
         with:
           app-id: ${{ vars.APP_ID }}
           app-key: ${{ secrets.APP_KEY }}
+          require-app: true
 
       - name: Checkout repository
         uses: actions/checkout@v7

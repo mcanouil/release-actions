@@ -83,6 +83,25 @@ else
   landed="the change"
   recovery="check it before you dispatch the workflow again"
 fi
+# A release tags what it lands, so it lands on the default branch only. The
+# event payload names that branch; the API answers when there is no payload or
+# no jq.
+if [[ -n "${VERSION}" ]]; then
+  default_branch=""
+  if [[ -n "${GITHUB_EVENT_PATH:-}" && -f "${GITHUB_EVENT_PATH}" ]] && command -v jq >/dev/null; then
+    default_branch="$(jq -r '.repository.default_branch // empty' "${GITHUB_EVENT_PATH}")" ||
+      die "could not read ${GITHUB_EVENT_PATH}, the event payload of the run."
+  fi
+  if [[ -z "${default_branch}" ]]; then
+    require_tools gh
+    [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
+    default_branch="$(gh api "repos/${REPOSITORY}" --jq .default_branch)" ||
+      die "could not read the default branch of ${REPOSITORY}. Check that the token can read it."
+  fi
+  [[ -n "${default_branch}" ]] || die "GitHub named no default branch for ${REPOSITORY}."
+  [[ "${default_branch}" == "${BRANCH}" ]] ||
+    die "a release lands on ${default_branch}, and this run is on ${BRANCH}. Dispatch the workflow from ${default_branch}."
+fi
 if [[ "${MODE}" == "pull-request" && "${PR_BRANCH}" == "${BRANCH}" ]]; then
   die "branch is ${PR_BRANCH}, the branch the pull request merges into. Pass another head branch."
 fi
