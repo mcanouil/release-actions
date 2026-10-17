@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 1.4.0 (2026-10-17)
+
 - feat: Add the `base` input to `land`. It sets the branch to land on, for a workflow that runs on a tag, such as on a `release` event.
 
 ## 1.3.0 (2026-10-17)
