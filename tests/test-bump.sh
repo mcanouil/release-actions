@@ -445,3 +445,22 @@ git_fixture
 run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='printf "x\n" >café.txt'
 assert_status 0 "${STATUS}" "after-bump with a non-ASCII path: ${ERR}"
 assert_contains "$(multiline_output files "${OUT}")" "café.txt" "unquoted non-ASCII path"
+
+# after-bump needs a git checkout, and says so before any write.
+fixture
+before="$(tree_sum)"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='true'
+refuses "after-bump needs a git checkout with a commit" "after-bump outside git"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged when after-bump has no git checkout"
+
+# Paths where one is a prefix of another and a space: "a" sorts after "a b"
+# once its hash is appended, when that hash starts above "b".
+fixture
+git_fixture
+n=0
+until printf '%s\n' "${n}" >a && [[ "$(git hash-object a)" == [c-f]* ]]; do n=$((n + 1)); done
+printf 'left alone\n' >"a b"
+run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='rm a'
+assert_status 0 "${STATUS}" "prefix paths: ${ERR}"
+assert_eq $'CHANGELOG.md\nCITATION.cff\nREADME.md\n_extensions/demo/_extension.yml\ntypst.toml' \
+  "$(multiline_output files "${OUT}")" "prefix paths keep only what after-bump changed"

@@ -29,6 +29,11 @@ RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 # Said when the files already hold a version that a failed run bumped.
 unreleased_hint="Create release {version} on the commit that bumped it, or revert that commit with a pull request, then dispatch again."
 require_bool allow-empty "${ALLOW_EMPTY}"
+if [[ -n "${AFTER_BUMP}" ]]; then
+  require_tools git
+  git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+    die "after-bump needs a git checkout with a commit, to list the files that it changes. Run bump after actions/checkout."
+fi
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
 require_tag_prefix "${TAG_PREFIX}"
@@ -225,14 +230,14 @@ tree_state() {
       else
         printf '%s -\n' "${path}"
       fi
-    done
+    done | LC_ALL=C sort
 }
 
 # Only what after-bump changes joins files: earlier steps of the job can leave
 # other changes in the tree.
 changed=""
 if [[ -n "${AFTER_BUMP}" ]]; then
-  before="$(tree_state)" || die "could not read the state of the tree before after-bump. Run bump in a git checkout."
+  before="$(tree_state)" || die "could not read the state of the tree before after-bump."
   bash -euo pipefail -c "${AFTER_BUMP}" ||
     die "after-bump failed: ${AFTER_BUMP}. The version is written but nothing is committed; fix the command and dispatch again."
   after="$(tree_state)" || die "could not list the files that after-bump changed."
