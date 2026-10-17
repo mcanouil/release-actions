@@ -42,7 +42,7 @@ if [[ -n "${VERSION}" ]]; then
 elif [[ -z "${MESSAGE}" ]]; then
   die "message is empty and there is no version. Pass a commit message, or the version of a release."
 fi
-[[ "${TAG_PREFIX}" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '${TAG_PREFIX}'. Use letters, digits, dots, hyphens or underscores."
+require_tag_prefix "${TAG_PREFIX}"
 [[ -n "${BRANCH}" ]] || die "GITHUB_REF_NAME is not set. Run land in a workflow on a branch."
 [[ "${MERGE_TIMEOUT}" =~ ^[1-9][0-9]*$ ]] || die "merge-timeout is '${MERGE_TIMEOUT}'. Use a number of seconds above 0."
 case "${MERGE}" in
@@ -69,12 +69,16 @@ if [[ -n "${VERSION}" ]]; then
   pr_message="${MESSAGE:-ci: release ${tag}}"
   PR_BRANCH="${PR_BRANCH:-release/${tag}}"
   BODY="${BODY:-Automated release of ${tag}.}"
+  subject="the bump"
+  by_hand="merge it by hand and create the release"
   landed="the bump of ${tag} with no release"
   recovery="create the release by hand on the landed commit, or revert it with a pull request and dispatch the workflow again"
 else
   push_message="${MESSAGE}"
   pr_message="${MESSAGE}"
   BODY="${BODY:-${MESSAGE}}"
+  subject="the change"
+  by_hand="merge it by hand"
   landed="the change"
   recovery="check it before you dispatch the workflow again"
 fi
@@ -123,7 +127,7 @@ land_push() {
   git rev-parse HEAD
 }
 
-# Says what to do when the bump is on the branch but the run cannot go on.
+# Says what to do when the change is on the branch but the run cannot go on.
 die_landed() {
   die "$1 ${BRANCH} holds ${landed}: ${recovery}."
 }
@@ -177,12 +181,12 @@ land_pull_request() {
       merge_state="${info#*|}"
     fi
     if [[ "${mergeable}" == "UNKNOWN" || "${merge_state}" == "UNKNOWN" ]]; then
-      [[ ${SECONDS} -lt ${deadline} ]] || die "GitHub did not say whether ${url} can merge within ${MERGE_TIMEOUT}s. Raise merge-timeout, or merge it by hand and create the release."
+      [[ ${SECONDS} -lt ${deadline} ]] || die "GitHub did not say whether ${url} can merge within ${MERGE_TIMEOUT}s. Raise merge-timeout, or ${by_hand}."
       sleep "${POLL_INTERVAL}"
     fi
   done
   [[ "${mergeable}" == "MERGEABLE" ]] ||
-    die "${url} is ${mergeable}, so the bump cannot be merged. Close it, bring ${BRANCH} back to a state the bump applies to, and dispatch the workflow again."
+    die "${url} is ${mergeable}, so ${subject} cannot be merged. Close it, bring ${BRANCH} back to a state ${subject} applies to, and dispatch the workflow again."
 
   # A pull request that nothing blocks merges at once; enabling auto-merge on
   # it would fail with "Pull request is in clean status".
@@ -223,7 +227,7 @@ land_pull_request() {
       if [[ "${state}" == "MERGED" ]]; then
         die_landed "${url} merged but reported no merge commit."
       fi
-      die "${url} did not merge within ${MERGE_TIMEOUT}s. Raise merge-timeout if the checks of ${BRANCH} take longer, or merge it by hand and create the release."
+      die "${url} did not merge within ${MERGE_TIMEOUT}s. Raise merge-timeout if the checks of ${BRANCH} take longer, or ${by_hand}."
     fi
     sleep "${POLL_INTERVAL}"
   done

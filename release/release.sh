@@ -30,7 +30,7 @@ REPOSITORY="${GITHUB_REPOSITORY:-}"
 require_tools gh perl
 [[ "${VERSION}" =~ ${VERSION_REGEX} ]] || die "version is '${VERSION}'. Pass the version output of the bump action."
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
-[[ "${TAG_PREFIX}" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '${TAG_PREFIX}'. Use letters, digits, dots, hyphens or underscores."
+require_tag_prefix "${TAG_PREFIX}"
 [[ -n "${TARGET}" ]] || die "target is empty. Pass the commit to tag."
 RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 require_bool draft "${DRAFT}"

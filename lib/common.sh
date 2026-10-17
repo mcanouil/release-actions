@@ -61,6 +61,12 @@ require_bool() {
   esac
 }
 
+# Stops unless PREFIX, the tag-prefix input, holds only characters that are
+# safe in a tag, a branch name and a glob.
+require_tag_prefix() {
+  [[ "$1" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '$1'. Use letters, digits, dots, hyphens or underscores."
+}
+
 # Prints VALUE, or today in UTC when VALUE is empty, after a YYYY-MM-DD check.
 release_date() {
   local value="${1:-$(date -u +%Y-%m-%d)}"

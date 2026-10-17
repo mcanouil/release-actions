@@ -28,7 +28,7 @@ require_bool allow-empty "${ALLOW_EMPTY}"
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
 require_tools perl yq gh
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
-[[ "${TAG_PREFIX}" =~ ^[A-Za-z0-9._-]*$ ]] || die "tag-prefix is '${TAG_PREFIX}'. Use letters, digits, dots, hyphens or underscores."
+require_tag_prefix "${TAG_PREFIX}"
 
 # Targets, as four lists with one entry per target.
 t_file=()
