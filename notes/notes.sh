@@ -15,6 +15,7 @@ VERSION="${VERSION:-}"
 CHANGELOG="${CHANGELOG:-CHANGELOG.md}"
 CHANGELOG_HEADING="${CHANGELOG_HEADING:-${DEFAULT_CHANGELOG_HEADING}}"
 HEADER="${HEADER:-}"
+FOOTER="${FOOTER:-}"
 SECTION_HEADING="${SECTION_HEADING-## Changelog}"
 GENERATE_NOTES="${GENERATE_NOTES:-false}"
 TAG="${TAG:-}"
@@ -51,6 +52,15 @@ if [[ -n "${HEADER}" ]]; then
   # shellcheck disable=SC2094 # The second argument only names the file in messages.
   header="$(FILL_version="${VERSION}" FILL_tag="${TAG}" FILL_date="${RELEASE_DATE}" FILL_repository="${REPOSITORY}" \
     fill_template version,tag,date,repository "${HEADER}" <"${HEADER}")"
+fi
+
+# Footer.
+footer=""
+if [[ -n "${FOOTER}" ]]; then
+  [[ -f "${FOOTER}" ]] || die "footer ${FOOTER} does not exist."
+  # shellcheck disable=SC2094 # The second argument only names the file in messages.
+  footer="$(FILL_version="${VERSION}" FILL_tag="${TAG}" FILL_date="${RELEASE_DATE}" FILL_repository="${REPOSITORY}" \
+    fill_template version,tag,date,repository "${FOOTER}" <"${FOOTER}")"
 fi
 
 # Generated notes.
@@ -94,6 +104,9 @@ if [[ -n "${section//[[:space:]]/}" ]]; then
 fi
 if [[ -n "${generated//[[:space:]]/}" ]]; then
   append "${generated}"
+fi
+if [[ -n "${footer//[[:space:]]/}" ]]; then
+  append "${footer}"
 fi
 
 length="$(perl -CI -0777 -ne 'print length' <"${body}")"

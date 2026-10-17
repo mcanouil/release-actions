@@ -48,7 +48,8 @@ refuses() {
   assert_contains "${ERR}" "$1" "$2 message"
 }
 
-# Puts a fake gh first on PATH, for repository o/r. The tags in GH_TAGS (one
+# Puts a fake gh first on PATH, for repository o/r, whose default branch is
+# GH_DEFAULT_BRANCH (default main). The tags in GH_TAGS (one
 # per line) exist, GH_RELEASE_EXISTS adds a release, GH_DOWN fails every call
 # as a token or network error would, GH_RELEASE_DOWN fails only the release
 # lookup, and GH_LOG, when set, records each call. Every App bot has the user
@@ -86,6 +87,9 @@ case "$*" in
   prefix="${args#api repos/o/r/git/matching-refs/tags/}"
   prefix="${prefix%% *}"
   { grep "^${prefix}" "${GH_TAGS}" || true; } | sed "s|^|refs/tags/|"
+  ;;
+"api repos/o/r --jq .default_branch"*)
+  echo "${GH_DEFAULT_BRANCH:-main}"
   ;;
 "api /users/"*)
   echo 123

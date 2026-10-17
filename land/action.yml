@@ -9,7 +9,7 @@ inputs:
     description: "Paths to commit, one per line, usually the files output of bump."
     required: true
   version:
-    description: "The version of a release, usually the version output of bump. It gives the defaults of message, branch and body."
+    description: "The version of a release, usually the version output of bump. It gives the defaults of message, branch and body, and a release lands only on the default branch."
     required: false
     default: ""
   tag-prefix:

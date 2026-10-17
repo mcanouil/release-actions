@@ -81,3 +81,14 @@ assert_contains "${ERR}" "owner of the token" "token lookup down warning"
 
 run_script "${identity}" SOURCE=other GH_TOKEN=t
 refuses "source" "unknown source"
+
+# require-app.
+run_script "${resolve}" REQUIRE_APP=true
+refuses "require-app is true, but no App is set" "require-app with no App"
+run_script "${resolve}" REQUIRE_APP=true APP_ID=1 PROVIDED_TOKEN=pat
+refuses "require-app is true, but no App is set" "require-app with an id and no key"
+run_script "${resolve}" REQUIRE_APP=true APP_ID=1 APP_KEY=key
+assert_status 0 "${STATUS}" "require-app with an App: ${ERR}"
+assert_eq app "$(output_value source "${OUT}")" "require-app source"
+run_script "${resolve}" REQUIRE_APP=maybe APP_ID=1 APP_KEY=key
+refuses "require-app is 'maybe'" "require-app not a boolean"
