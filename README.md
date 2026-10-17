@@ -314,6 +314,9 @@ With a `version`, `land` lands a release only on the default branch of the repos
 If the workflow runs on another branch, the step stops before it commits.
 `land` reads the default branch from the event of the workflow.
 Without a `version`, `land` commits on any branch.
+Set `base` to land on another branch than the branch of the workflow.
+Use it when the workflow runs on a tag, for example on a `release` event.
+A release cannot have a `base`.
 
 With a `version`, `land` uses the defaults of a release, where `<tag>` is `<tag-prefix><version>`:
 
@@ -325,7 +328,7 @@ With a `version`, `land` uses the defaults of a release, where `<tag>` is `<tag-
 Without a `version`, give `message`, and `branch` for `mode: pull-request`.
 `land` uses `message` verbatim, as the commit message and the pull request title.
 
-With `mode: push`, `land` commits and pushes to the branch of the workflow.
+With `mode: push`, `land` commits and pushes to the branch of the workflow, or to `base`.
 
 With `mode: pull-request`, `land` does these steps:
 
@@ -348,6 +351,7 @@ The next steps, for example a build, use the landed files.
 | `tag-prefix` | `''` | Prefix of the release name in the default message and branch. |
 | `message` | release message | Commit message and pull request title. Required without `version`. |
 | `branch` | `release/<tag>` | Head branch of the pull request. Required for `pull-request` without `version`. |
+| `base` | branch of the workflow | Branch to land on: the target of the push, or the base of the pull request. Not for a release. |
 | `body` | release body, else `message` | Pull request body. |
 | `merge` | `auto` | `auto` or `none`. |
 | `merge-method` | `squash` | `squash` or `merge`. |

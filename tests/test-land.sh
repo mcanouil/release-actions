@@ -450,3 +450,29 @@ fixture
 run_land PATH="$(path_without jq)"
 assert_status 0 "${STATUS}" "release without jq: ${ERR}"
 assert_contains "$(cat "${GH_LOG}")" "api repos/o/r --jq .default_branch" "API fallback without jq"
+
+# A run on a tag, such as a release event, lands a change on the base branch.
+fixture
+run_land GITHUB_REF_NAME=2026.10.17 VERSION= MESSAGE='ci: update docs' BASE=main
+assert_status 0 "${STATUS}" "push to base: ${ERR}"
+assert_eq "ci: update docs" "$(git -C "${GH_ORIGIN}" log -1 --format=%s main)" "push to base"
+if git -C "${GH_ORIGIN}" rev-parse -q --verify refs/heads/2026.10.17 >/dev/null; then
+  printf '  push to base: pushed to the ref of the run\n' >&2
+  exit 1
+fi
+
+fixture
+export GH_HEAD_BRANCH=ci/docs
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr GITHUB_REF_NAME=2026.10.17 VERSION= MESSAGE='ci: update docs' PR_BRANCH=ci/docs BASE=main
+assert_status 0 "${STATUS}" "pull request to base: ${ERR}"
+assert_contains "${LOG}" "pr create --repo o/r --base main --head ci/docs" "pull request to base"
+unset GH_HEAD_BRANCH
+
+fixture
+run_pr VERSION= MESSAGE='ci: update docs' PR_BRANCH=docs BASE=docs
+refuses_landing "the branch the pull request merges into" "head branch equal to base"
+
+fixture
+run_land BASE=main
+refuses_landing "base" "release with a base"

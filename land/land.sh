@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Commits files and lands the commit on the branch of the run, with a push or
-# with a pull request, then checks out the landed commit. With a version, the
+# Commits files and lands the commit on the branch of the run, or on base, with
+# a push or with a pull request, then checks out the landed commit. With a version, the
 # message, the branch and the body of a release are the defaults.
 # The inputs of land/action.yml arrive as environment variables.
 set -euo pipefail
@@ -24,7 +24,8 @@ MERGE="${MERGE:-auto}"
 MERGE_METHOD="${MERGE_METHOD:-squash}"
 WAIT="${WAIT:-true}"
 ALLOW_UNCHANGED="${ALLOW_UNCHANGED:-false}"
-BRANCH="${GITHUB_REF_NAME:-}"
+BASE="${BASE:-}"
+BRANCH="${BASE:-${GITHUB_REF_NAME:-}}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 MERGE_TIMEOUT="${MERGE_TIMEOUT:-600}"
 POLL_INTERVAL="${LAND_POLL_INTERVAL:-10}"
@@ -39,11 +40,12 @@ push | pull-request) ;;
 esac
 if [[ -n "${VERSION}" ]]; then
   [[ "${VERSION}" =~ ${VERSION_REGEX} ]] || die "version is '${VERSION}'. Pass the version output of the bump action."
+  [[ -z "${BASE}" ]] || die "base is ${BASE}, and a release lands on the branch of the run. Leave base empty."
 elif [[ -z "${MESSAGE}" ]]; then
   die "message is empty and there is no version. Pass a commit message, or the version of a release."
 fi
 require_tag_prefix "${TAG_PREFIX}"
-[[ -n "${BRANCH}" ]] || die "GITHUB_REF_NAME is not set. Run land in a workflow on a branch."
+[[ -n "${BRANCH}" ]] || die "GITHUB_REF_NAME is not set. Run land in a workflow on a branch, or pass base."
 [[ "${MERGE_TIMEOUT}" =~ ^[1-9][0-9]*$ ]] || die "merge-timeout is '${MERGE_TIMEOUT}'. Use a number of seconds above 0."
 [[ "${BLOCKED_AFTER}" =~ ^[0-9]+$ ]] || die "blocked-after is '${BLOCKED_AFTER}'. Use a number of seconds."
 case "${MERGE}" in
