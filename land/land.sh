@@ -126,8 +126,14 @@ git symbolic-ref -q HEAD >/dev/null ||
 # A base that origin lacks would be created by the push, and a HEAD that does
 # not build on it would bring other commits into the pull request.
 if [[ -n "${BASE}" ]]; then
-  git fetch -q origin "refs/heads/${BASE}" 2>/dev/null ||
-    die "base is ${BASE}, which origin does not have. Pass the name of an existing branch, such as main."
+  status=0
+  git ls-remote --exit-code --heads origin "refs/heads/${BASE}" >/dev/null || status=$?
+  case "${status}" in
+  0) ;;
+  2) die "base is ${BASE}, which origin does not have. Pass the name of an existing branch, such as main." ;;
+  *) die "could not read the branches of origin to find ${BASE}. Check that the token can read the repository." ;;
+  esac
+  git fetch -q origin "refs/heads/${BASE}" || die "could not fetch ${BASE}."
   git merge-base --is-ancestor FETCH_HEAD HEAD ||
     die "HEAD does not build on ${BASE}. Check out ${BASE} before land, for example with the ref input of actions/checkout."
 fi
