@@ -658,3 +658,27 @@ before="$(tree_sum)"
 run_bump BUMP=minor ECOSYSTEMS=cargo PATH="$(path_without cargo)"
 refuses "cargo is not on PATH" "missing cargo"
 assert_eq "${before}" "$(tree_sum)" "tree unchanged without cargo"
+
+# A tab-indented package.json: the top-level version only.
+fixture
+git_fixture
+printf '{\n\t"name": "demo",\n\t"version": "1.4.2",\n\t"dependencies": {\n\t\t"left-pad": {\n\t\t\t"version": "1.0.0"\n\t\t}\n\t}\n}\n' >package.json
+git add -A
+git commit -q -m files
+run_bump BUMP=minor ECOSYSTEMS="npm, citation"
+assert_status 0 "${STATUS}" "tab-indented package.json: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "package.json is the source"
+assert_eq $'\t"version": "1.5.0",' "$(sed -n 3p package.json)" "tab-indented version written"
+assert_eq $'\t\t\t"version": "1.0.0"' "$(sed -n 6p package.json)" "deeper version untouched"
+
+# A preset with a missing file names the preset and offers no required: false.
+fixture
+rm CITATION.cff
+run_bump BUMP=minor ECOSYSTEMS=citation
+refuses "the citation preset needs" "citation without CITATION.cff"
+case "${ERR}" in
+*"required: false"*)
+  echo "  missing file message: [${ERR}] mentions required: false" >&2
+  exit 1
+  ;;
+esac

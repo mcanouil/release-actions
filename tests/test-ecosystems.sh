@@ -81,3 +81,9 @@ printf 'version: 1.0.0\n' >_extensions/other/_extension.yml
 run ecosystem_targets quarto-extension
 refuses "_extensions/demo/_extension.yml and _extensions/other/_extension.yml" "two extension manifests"
 assert_contains "${ERR}" "exactly one" "two extension manifests message"
+
+printf '{\n\t"version": "1.0.0",\n\t"x": {\n\t\t"version": "2.0.0",\n\t}\n}\n' >package.json
+assert_eq $'- file: \'package.json\'\n  pattern: \'^\t"version": "{version}",$\'' "$(ecosystem_targets npm)" "tab-indented npm target"
+printf '{\n    "x": {\n        "version": "2.0.0",\n    },\n    "version": "1.0.0",\n}\n' >package.json
+assert_eq $'- file: \'package.json\'\n  pattern: \'^    "version": "{version}",$\'' "$(ecosystem_targets npm)" "shallowest version line wins"
+rm package.json

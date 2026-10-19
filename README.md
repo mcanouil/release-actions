@@ -228,7 +228,7 @@ Spaces and empty items are ignored, and an unknown name stops the step.
 | Preset | Writes | Command that it runs |
 | --- | --- | --- |
 | `citation` | `version` and `date-released` in `CITATION.cff` | None. |
-| `npm` | `"version"` in `package.json` | `npm install --package-lock-only --ignore-scripts --offline`, only when `package-lock.json` exists. |
+| `npm` | `"version"` in `package.json`, at the indentation of its top-level key (spaces or tabs) | `npm install --package-lock-only --ignore-scripts --offline`, only when `package-lock.json` exists. |
 | `cargo` | `version` under `[package]` in `Cargo.toml` | `cargo update --workspace --offline`, and online if that fails. |
 | `typst` | `version` in `typst.toml` | None. |
 | `quarto-extension` | `version` in `_extensions/*/_extension.yml` | None. |
@@ -278,7 +278,7 @@ It writes `Version` in `DESCRIPTION` and rolls `NEWS.md`.
   `<Package>` is the `Package` field of `DESCRIPTION`.
 - A release renames this heading to `# <Package> <version>`, with no date.
   The text under it becomes the `notes-file` output.
-- `dev` adds a new `# <Package> (development version)` heading on top.
+- `dev` adds a new `# <Package> (development version)` heading on top, unless the first heading already is one.
 - If `NEWS.md` has no development heading, the step stops.
   An empty section stops the step too, unless `allow-empty` is `true`.
 

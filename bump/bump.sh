@@ -201,6 +201,9 @@ for ((i = 0; i < n; i++)); do
     e_section+=("${t_section[i]}")
   done < <(compgen -G "${t_file[i]}" || true)
   if [[ ${matched_files} -eq 0 && "${t_required[i]}" != "false" ]]; then
+    if [[ -n "${t_preset[i]}" ]]; then
+      die "no file matches '${t_file[i]}', which the ${t_preset[i]} preset needs. Add it, or remove ${t_preset[i]} from ecosystems."
+    fi
     die "no file matches '${t_file[i]}'. Fix the path, or set required: false on this target."
   fi
 done

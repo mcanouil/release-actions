@@ -42,6 +42,21 @@ ecosystem_quote() {
   esac
 }
 
+# Prints the indentation of the top-level "version" key of the package.json
+# FILE: the shortest indentation among its "version" lines, since a nested one
+# sits deeper. Prints two spaces when FILE is missing or has none.
+ecosystem_json_indent() {
+  local indent=""
+  if [[ -f "$1" ]]; then
+    indent="$(LC_ALL=C awk '
+      match($0, /^[ \t]+"version": "/) && (best == "" || RLENGTH < blen) {
+        best = substr($0, 1, RLENGTH - 12); blen = RLENGTH; found = 1
+      }
+      END { if (found) print best }' "$1")"
+  fi
+  printf '%s' "${indent:-  }"
+}
+
 # Prints the YAML target items of each preset in NAMES, in order. The first
 # item of a preset that names a manifest is its version line.
 ecosystem_targets() {
@@ -55,7 +70,7 @@ ecosystem_targets() {
       ecosystem_item CITATION.cff "^date-released: ${quote}{date}${quote}\$"
       ;;
     npm)
-      ecosystem_item package.json '^  "version": "{version}",$'
+      ecosystem_item package.json "^$(ecosystem_json_indent package.json)\"version\": \"{version}\",\$"
       ;;
     cargo)
       ecosystem_item Cargo.toml '^version = "{version}"$' '[package]'
