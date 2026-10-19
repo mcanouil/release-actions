@@ -152,11 +152,12 @@ Alternatively, revert that commit with a pull request, and dispatch the workflow
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `bump` | (required) | `patch`, `minor`, `major`, `calver`, or an explicit version such as `1.2.3`. |
+| `bump` | (required) | `patch`, `minor`, `major`, `calver`, or an explicit version such as `1.2.3`. With the `r` preset, also `dev`. |
+| `ecosystems` | `''` | Presets for well-known files, comma-separated or one per line: `citation`, `npm`, `cargo`, `typst`, `quarto-extension` or `r`. |
 | `targets` | `''` | YAML list of targets. Each target has `file`, `pattern`, and optionally `source` and `required`. |
 | `version-source` | `target` | Where the current version comes from: `target` or `tag`. |
 | `tag-prefix` | `''` | Prefix of the version tags, such as `v`. Give the same value to `release`. |
-| `changelog` | `CHANGELOG.md` | Path of the changelog. An empty string turns off the changelog roll. |
+| `changelog` | `CHANGELOG.md` | Path of the changelog. An empty string turns off the changelog roll. With the `r` preset, the default means `NEWS.md`. |
 | `changelog-heading` | `## {version} ({date})` | Heading that the Unreleased section becomes. |
 | `allow-empty` | `false` | Release when the Unreleased section is empty. |
 | `after-bump` | `''` | Bash command that `bump` runs after it writes the version. |
@@ -218,6 +219,72 @@ These targets are ready to use:
 A pattern cannot update a lock file.
 To update `package-lock.json` or `Cargo.lock`, add a step after `bump` that runs `npm install --package-lock-only` or `cargo update --workspace --offline`.
 
+### Ecosystems
+
+`ecosystems` is a shortcut for the targets of well-known files.
+Give preset names separated by commas or by new lines.
+Spaces and empty items are ignored, and an unknown name stops the step.
+
+| Preset | Writes | Command that it runs |
+| --- | --- | --- |
+| `citation` | `version` and `date-released` in `CITATION.cff` | None. |
+| `npm` | `"version"` in `package.json` | `npm install --package-lock-only --ignore-scripts --offline`, only when `package-lock.json` exists. |
+| `cargo` | `version` under `[package]` in `Cargo.toml` | `cargo update --workspace --offline`, and online if that fails. |
+| `typst` | `version` in `typst.toml` | None. |
+| `quarto-extension` | `version` in `_extensions/*/_extension.yml` | None. |
+| `r` | `Version` in `DESCRIPTION` | None. See [The r preset](#the-r-preset). |
+
+```yaml
+- name: Bump the version
+  id: bump
+  uses: mcanouil/release-actions/bump@v1
+  with:
+    bump: minor
+    ecosystems: npm, citation
+```
+
+The rules for presets:
+
+- The targets of the presets come first, in list order, and your `targets` come after them.
+- The targets of a preset are required: a missing file or a missing line stops the step.
+  A duplicate stops the step too, which is the same file and the same pattern in two places, such as a preset and one of your `targets`.
+- The commands of the presets run before `after-bump`, and their changed files go into the `files` output.
+  `bump` checks that the tools of the commands are installed before it writes a file.
+- The current version comes from the first preset in the list order that names a manifest: `npm`, `cargo`, `typst`, `quarto-extension` or `r`.
+  `citation` gives the current version only when it is the only preset.
+  A target of yours with `source: true` wins over the presets.
+  With `version-source: tag`, the presets only write the version.
+- `citation` keeps the form of the file: a quoted value stays quoted, and a plain value stays plain.
+- `quarto-extension` needs exactly one `_extensions/*/_extension.yml`, one level deep.
+  Vendored extensions at `_extensions/<owner>/<name>/` never match.
+- `cargo` writes only the `version` under `[package]`, not the version of a dependency.
+
+### The r preset
+
+The `r` preset follows the usethis conventions for an R package.
+It writes `Version` in `DESCRIPTION` and rolls `NEWS.md`.
+
+- A version has two to four parts, such as `1.2.3` or `1.2.3.9000`.
+- `patch`, `minor` and `major` drop a fourth part, so `1.2.3.9000` becomes `1.2.4`, `1.3.0` or `2.0.0`.
+- `dev` adds `.9000` to a version of two or three parts, for the start of development.
+  On a version of four parts, `dev` changes nothing.
+  Only the `r` preset accepts `dev`.
+- `calver` and an explicit version of four parts stop the step.
+- A version of four parts is a development version, so it needs no tag.
+
+`NEWS.md` has level-1 sections:
+
+- The development section starts with `# <Package> (development version)`.
+  `<Package>` is the `Package` field of `DESCRIPTION`.
+- A release renames this heading to `# <Package> <version>`, with no date.
+  The text under it becomes the `notes-file` output.
+- `dev` adds a new `# <Package> (development version)` heading on top.
+- If `NEWS.md` has no development heading, the step stops.
+  An empty section stops the step too, unless `allow-empty` is `true`.
+
+With `r`, a `changelog` that you leave at its default `CHANGELOG.md` means `NEWS.md`.
+Any other value is used as given, and an empty string turns off the roll.
+
 ### Current version and next version
 
 With `version-source: target`, the current version comes from one target.
@@ -276,7 +343,8 @@ It does not change the repository.
 | --- | --- | --- |
 | `notes-file` | `''` | File that contains the changelog section, usually the `notes-file` output of `bump`. |
 | `version` | `''` | Value of `{version}` in the header. Without `notes-file`, also the version whose section `notes` reads from the changelog. |
-| `changelog` | `CHANGELOG.md` | Path of the changelog. `notes` reads it only without `notes-file`. |
+| `ecosystems` | `''` | Presets, as in `bump`. Only `r` changes anything: `notes` reads the section `# <Package> <version>` of `NEWS.md`. `notes` reads it only without `notes-file`. |
+| `changelog` | `CHANGELOG.md` | Path of the changelog. `notes` reads it only without `notes-file`. With the `r` preset, the default means `NEWS.md`. |
 | `changelog-heading` | `## {version} ({date})` | Form of the version headings. `notes` reads it only without `notes-file`. |
 | `header` | `''` | Template file at the start of the body. |
 | `footer` | `''` | Template file at the end of the body. |
@@ -336,6 +404,8 @@ With `mode: pull-request`, `land` does these steps:
 1. It commits on `branch`, and force-pushes this branch.
 2. If a pull request is open for this branch, `land` updates its title and body.
    Otherwise, it opens a pull request, with the label `Type: CI/CD :robot:` if the repository has this label.
+   `land` adds `labels` and `assignees` when it creates the pull request, and also when it reuses one.
+   With `mode: push`, it ignores them and prints a notice.
 3. With `merge: auto`, it merges the pull request with `merge-method` and deletes the branch.
    If checks block the merge, it turns on auto-merge.
    With `merge: none`, it stops here.
@@ -354,6 +424,8 @@ The next steps, for example a build, use the landed files.
 | `branch` | `release/<tag>` | Head branch of the pull request. Required for `pull-request` without `version`. |
 | `base` | branch of the workflow | Branch to land on: the target of the push, or the base of the pull request. Not for a release. |
 | `body` | release body, else `message` | Pull request body. |
+| `labels` | `''` | Labels of the pull request, comma-separated or one per line. A label that the repository lacks stops the step. |
+| `assignees` | `''` | Assignees of the pull request, comma-separated or one per line. |
 | `merge` | `auto` | `auto` or `none`. |
 | `merge-method` | `squash` | `squash` or `merge`. |
 | `wait` | `true` | Wait until the pull request merges. |
@@ -444,6 +516,7 @@ GitHub creates the tag as a lightweight tag on `target`.
 | `date` | today in UTC | Value of `{date}` in the title, `YYYY-MM-DD`. |
 | `target` | `github.sha` | Commit to tag. |
 | `assets` | `''` | Globs of the files to attach, one per line. Add `#label` to a line to give a label. |
+| `existing` | `fail` | What to do when the release or its tag exists: `fail` or `keep`. |
 | `draft` | `false` | Create a draft release. |
 | `prerelease` | `false` | Mark the release as a prerelease. |
 | `latest` | `auto` | Mark the release as the latest: `auto`, `true` or `false`. |
@@ -460,6 +533,11 @@ In the title, `{count}` is empty for a version such as `2026.10.16`, and a space
 Thus `title: "{date}{count}"` gives `2026-10-16` for the first release of a day, and `2026-10-16 (2)` for the second one.
 
 If the tag or the release already exists, the step stops before it creates anything.
+With `existing: keep`, a run that you repeat succeeds instead.
+`keep` accepts a published release whose tag is on `target`.
+It refuses a draft release, a release with no tag, and a tag on another commit.
+It creates nothing, uploads nothing and moves no rolling tag.
+The outputs are those of the existing release.
 Each asset glob must match at least one file.
 
 With `rolling: true`, `target` must be a full commit SHA.
