@@ -4,10 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- feat: Add the `ecosystems` input to `bump`. It adds the targets and the lock file commands of the `citation`, `npm`, `cargo`, `typst` and `quarto-extension` presets. (#N)
-- feat: Add the `r` preset, with the `dev` bump type, R package versions and `NEWS.md`. `notes` also reads its section from `NEWS.md`. (#N)
-- feat: Add the `labels` and `assignees` inputs to `land`, for the pull request. (#N)
-- feat: Add the `existing` input to `release`. With `keep`, a repeated run succeeds when the release exists on the target commit. (#N)
+- feat: Add the `ecosystems` input to `bump`. It adds the targets and the lock file commands of the `citation`, `npm`, `cargo`, `typst` and `quarto-extension` presets. (#9)
+- feat: Add the `r` preset, with the `dev` bump type, R package versions and `NEWS.md`. `notes` also reads its section from `NEWS.md`. (#9)
+- feat: Add the `labels` and `assignees` inputs to `land`, for the pull request. (#9)
+- feat: Add the `existing` input to `release`. With `keep`, a repeated run succeeds when the release exists on the target commit. (#9)
 
 ## 1.4.0 (2026-10-17)
 
