@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - feat: Add the `r` preset, with the `dev` bump type, R package versions and `NEWS.md`. `notes` also reads its section from `NEWS.md`. (#9)
 - feat: Add the `labels` and `assignees` inputs to `land`, for the pull request. (#9)
 - feat: Add the `existing` input to `release`. With `keep`, a repeated run succeeds when the release exists on the target commit. (#9)
+- fix: End land cleanly when files is empty and allow-unchanged is true. (#9)
 
 ## 1.4.0 (2026-10-17)
 
