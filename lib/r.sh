@@ -50,7 +50,7 @@ r_next_version() {
 # Prints the Package: value of the DESCRIPTION file FILE.
 r_package() {
   local package
-  [[ -f "$1" ]] || die "$1 does not exist. Run bump at the root of the R package."
+  [[ -f "$1" ]] || die "$1 does not exist. Run the step at the root of the R package."
   package="$(sed -n 's/^Package:[[:space:]]*//p' "$1" | sed -n 1p | tr -d '[:space:]')"
   [[ -n "${package}" ]] || die "$1 has no Package: line. Add one, such as 'Package: mypackage'."
   printf '%s\n' "${package}"
@@ -58,15 +58,18 @@ r_package() {
 
 # Prints the section of the NEWS.md file FILE under the heading
 # "# PACKAGE VERSION", up to the next level-1 heading outside a fenced code
-# block, without blank lines around it. VERSION can be "(development version)".
+# block, without blank lines around it. Lines keep their trailing spaces, which
+# can be Markdown hard breaks. VERSION can be "(development version)".
 # Returns 2 when no heading matches and 3 when more than one does.
 r_news_section() {
   HEADING="# $2 $3" perl -e '
     my ($found, $inside, $fence, @lines) = (0, 0, 0);
     open my $in, "<", $ARGV[0] or die "cannot read $ARGV[0]: $!\n";
     while (my $line = <$in>) {
-      $line =~ s/\s+\z//;
-      if (!$fence && $line eq $ENV{HEADING}) {
+      $line =~ s/\r?\n\z//;
+      $line =~ s/\r\z//;
+      (my $trimmed = $line) =~ s/\s+\z//;
+      if (!$fence && $trimmed eq $ENV{HEADING}) {
         $found++;
         $inside = 1;
         next;
@@ -81,8 +84,8 @@ r_news_section() {
     close $in;
     exit 2 if $found == 0;
     exit 3 if $found > 1;
-    shift @lines while @lines && $lines[0] eq "";
-    pop @lines while @lines && $lines[-1] eq "";
+    shift @lines while @lines && $lines[0] !~ /\S/;
+    pop @lines while @lines && $lines[-1] !~ /\S/;
     print map { "$_\n" } @lines;
   ' "$1"
 }

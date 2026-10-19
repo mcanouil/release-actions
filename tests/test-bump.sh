@@ -539,7 +539,7 @@ refuses "unknown ecosystem 'foo'" "unknown ecosystem"
 
 fixture
 run_bump BUMP=patch ECOSYSTEMS="typst, typst"
-refuses "is listed twice. Keep one." "preset listed twice"
+refuses "ecosystems lists typst twice. Keep one." "preset listed twice"
 
 fixture
 before="$(tree_sum)"
@@ -571,13 +571,14 @@ EOF
 }
 
 npm_fixture
-run_bump BUMP=minor ECOSYSTEMS=npm PM_TOUCH=package-lock.json
+run_bump BUMP=minor ECOSYSTEMS="npm, citation" PM_TOUCH=package-lock.json
 assert_status 0 "${STATUS}" "npm preset: ${ERR}"
 assert_eq "1.4.2" "$(output_value previous "${OUT}")" "package.json is the source"
 assert_eq '  "version": "1.5.0",' "$(sed -n 3p package.json)" "package.json version written"
 assert_eq '      "version": "1.0.0",' "$(sed -n 6p package.json)" "nested version untouched"
-assert_eq "npm install --package-lock-only --ignore-scripts --offline" "$(cat "${PM_LOG}")" "one npm call"
-assert_eq $'CHANGELOG.md\npackage-lock.json\npackage.json' "$(multiline_output files "${OUT}")" "npm files"
+assert_eq "npm install --package-lock-only --ignore-scripts --no-audit --no-fund --offline" "$(cat "${PM_LOG}")" "one npm call"
+assert_eq 'version: 1.5.0' "$(grep '^version:' CITATION.cff)" "CITATION.cff version written"
+assert_eq $'CHANGELOG.md\nCITATION.cff\npackage-lock.json\npackage.json' "$(multiline_output files "${OUT}")" "npm files"
 
 npm_fixture
 git rm -q package-lock.json
@@ -589,7 +590,7 @@ assert_eq $'CHANGELOG.md\npackage.json' "$(multiline_output files "${OUT}")" "np
 
 npm_fixture
 run_bump BUMP=minor ECOSYSTEMS=npm PM_FAIL=all
-refuses "the command of an ecosystems preset failed: npm install" "failing npm"
+refuses "the command of the npm preset failed: npm install" "failing npm"
 
 # cargo preset: [package] version only, offline first, then online.
 cargo_fixture() {
@@ -627,7 +628,7 @@ assert_contains "$(multiline_output files "${OUT}")" "Cargo.lock" "lock joins fi
 
 cargo_fixture
 run_bump BUMP=minor ECOSYSTEMS=cargo PM_FAIL=all
-refuses "the command of an ecosystems preset failed: cargo update" "failing cargo"
+refuses "the command of the cargo preset failed: cargo update" "failing cargo"
 
 # The preset commands run before after-bump, with the same environment.
 cargo_fixture

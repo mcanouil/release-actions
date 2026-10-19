@@ -11,7 +11,8 @@
 #                                   variables, and prints the number of matches.
 #
 # SECTION, such as [package], limits the matches to the lines under that header
-# line, up to the next line that starts with [.
+# line, up to the next line that starts with [. The header line can end with a
+# # comment.
 #
 # A pattern is literal text with {version}, {date} and {major} placeholders.
 # A leading ^ and a trailing $ anchor it to a line; a trailing $ also matches
@@ -61,7 +62,7 @@ close $in;
 # The text before the section, the section body and the text after it.
 my ($head, $tail) = ('', '');
 if (defined $section && $section ne '') {
-  if ($text =~ /^\Q$section\E[ \t]*\r?\n/m) {
+  if ($text =~ /^\Q$section\E[ \t]*(?:#[^\r\n]*)?\r?\n/m) {
     $head = substr($text, 0, $+[0]);
     my $rest = substr($text, $+[0]);
     if ($rest =~ /^\[/m) {

@@ -69,7 +69,10 @@ run_land FILES= ALLOW_UNCHANGED=true
 assert_status 0 "${STATUS}" "empty files with allow-unchanged: ${ERR}"
 assert_eq false "$(output_value changed "${OUT}")" "empty files changed output"
 assert_eq "" "$(output_value sha "${OUT}")" "empty files sha output"
-assert_contains "${ERR}" "nothing to land" "empty files notice"
+assert_eq "" "${ERR}" "empty files notice not on stderr"
+notice="$(env GITHUB_OUTPUT="${SCRATCH}/out" GITHUB_EVENT_PATH="${SCRATCH}/event.json" GITHUB_REF_NAME=main MODE=push FILES= \
+  ALLOW_UNCHANGED=true VERSION=1.5.0 TAG_PREFIX=v GH_TOKEN=t "${script}" 2>/dev/null)"
+assert_eq "files is empty: nothing to land." "${notice}" "empty files notice on stdout"
 assert_eq "$(git -C "${GH_ORIGIN}" rev-parse main)" "$(git rev-parse HEAD)" "empty files adds no commit"
 run_land FILES=missing.txt
 refuses_landing "missing.txt" "missing file"
@@ -176,20 +179,22 @@ assert_contains "${LOG}" "--label Type: CI/CD :robot:" "label"
 
 fixture
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
-run_pr LABELS='Type: CI/CD :robot:, ci, ,' ASSIGNEES=' mcanouil , ,octocat'
+printf 'Type: CI/CD :robot:\nci\n' >"${SCRATCH}/labels"
+run_pr GH_LABELS="${SCRATCH}/labels" LABELS='Type: CI/CD :robot:, ci, ,' ASSIGNEES=' mcanouil , ,octocat'
 assert_status 0 "${STATUS}" "labels and assignees: ${ERR}"
 assert_contains "${LOG}" "--label Type: CI/CD :robot: --label ci --assignee mcanouil --assignee octocat" "create labels and assignees"
+assert_eq 1 "$(grep -o -- '--label Type: CI/CD :robot:' "${GH_LOG}" | wc -l | tr -d ' ')" "default label passed once"
 
 fixture
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
-run_pr LABELS=$'Type: CI/CD :robot:\nci\n' ASSIGNEES=$'mcanouil\noctocat'
+run_pr GH_LABELS="${SCRATCH}/labels" LABELS=$'Type: CI/CD :robot:\nci\n' ASSIGNEES=$'mcanouil\noctocat'
 assert_status 0 "${STATUS}" "multi-line labels: ${ERR}"
 assert_contains "${LOG}" "--label Type: CI/CD :robot: --label ci --assignee mcanouil --assignee octocat" "multi-line labels and assignees"
 
 fixture
 git push -q origin HEAD:refs/heads/release/v1.5.0
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
-run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3' LABELS='Type: CI/CD :robot:, ci' ASSIGNEES=mcanouil
+run_pr GH_LABELS="${SCRATCH}/labels" GH_STALE_PR='3 https://github.com/o/r/pull/3' LABELS='Type: CI/CD :robot:, ci' ASSIGNEES=mcanouil
 assert_status 0 "${STATUS}" "reused labels: ${ERR}"
 assert_contains "${LOG}" "--add-label Type: CI/CD :robot: --add-label ci --add-assignee mcanouil" "edit labels and assignees"
 
@@ -201,15 +206,34 @@ assert_eq "" "$(cat "${GH_LOG}")" "push makes no gh call"
 
 fixture
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
-run_pr LABELS='ci, nope' GH_BAD_LABEL=nope
-refuses "nope" "missing label"
-assert_contains "${ERR}" "label" "missing label message"
+run_pr GH_LABELS="${SCRATCH}/labels" LABELS='ci, nope, nada'
+refuses "labels lists 'nope', 'nada', which o/r does not have" "missing label"
+assert_eq "" "$(git ls-remote --heads origin release/v1.5.0)" "missing label pushes no branch"
+case "${ERR}" in
+*"Assignees asked for"* | *"Labels asked for"*)
+  echo "  missing label message: [${ERR}] lists the request" >&2
+  exit 1
+  ;;
+esac
+
+fixture
+pr_script 'MERGEABLE|CLEAN'
+run_pr GH_LABELS_DOWN=1 LABELS=ci
+refuses "could not list the labels of o/r" "label list failure"
+assert_eq "" "$(git ls-remote --heads origin release/v1.5.0)" "label list failure pushes no branch"
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr GH_LABELS_DOWN=1
+assert_status 0 "${STATUS}" "label list failure without labels: ${ERR}"
 
 fixture
 git push -q origin HEAD:refs/heads/release/v1.5.0
 pr_script 'MERGEABLE|CLEAN'
-run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3' LABELS='nope' GH_BAD_LABEL=nope
-refuses "nope" "missing label on reused pull request"
+before="$(branch_sha)"
+run_pr GH_LABELS="${SCRATCH}/labels" GH_STALE_PR='3 https://github.com/o/r/pull/3' LABELS='nope'
+refuses "labels lists 'nope'" "missing label on reused pull request"
+assert_eq "${before}" "$(branch_sha)" "missing label leaves the reused branch"
 
 fixture
 git push -q origin HEAD:refs/heads/release/v1.5.0

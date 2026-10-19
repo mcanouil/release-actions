@@ -106,6 +106,7 @@ refuses_release "release v1.5.0 is a draft. Publish or delete it" "keep draft"
 
 run_release TAG_PREFIX=v EXISTING=keep GH_RELEASE_EXISTS=1
 refuses_release "release v1.5.0 exists, but tag v1.5.0 does not" "keep without tag"
+assert_eq "" "$(find "${RUNNER_TEMP}" -type f)" "keep without tag leaves no temporary file"
 
 run_release TAG_PREFIX=v EXISTING=keep
 assert_status 0 "${STATUS}" "keep with nothing there creates: ${ERR}"

@@ -99,6 +99,8 @@ assert_eq $'0.0.1\n1.4.2\n9.9.9\n8.8.8' "$(find_matches '^version = "{version}"$
 count="$(VERSION=2.0.0 DATE=2026-10-15 MAJOR=2 perl "${script}" replace '^version = "{version}"$' "${file}" '[package]')"
 assert_eq 1 "${count}" "section replace count"
 assert_eq $'version = "0.0.1"\nversion = "2.0.0"\nversion = "9.9.9"\nversion = "8.8.8"' "$(grep '^version' "${file}")" "section replace leaves the rest"
+printf '[package] # the crate\r\nversion = "1.4.2"\r\n' >"${file}"
+assert_eq "1.4.2" "$(section_find '[package]')" "section header with a comment"
 
 # The r form of {version} takes two to four parts.
 printf 'Version: 2.0.8.9000\nOther: 1.2\n' >"${file}"

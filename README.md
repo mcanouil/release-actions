@@ -223,16 +223,17 @@ To update `package-lock.json` or `Cargo.lock`, add a step after `bump` that runs
 
 `ecosystems` is a shortcut for the targets of well-known files.
 Give preset names separated by commas or by new lines.
-Spaces and empty items are ignored, and an unknown name stops the step.
+Spaces and empty items are ignored.
+An unknown name or a name given twice stops the step.
 
 | Preset | Writes | Command that it runs |
 | --- | --- | --- |
 | `citation` | `version` and `date-released` in `CITATION.cff` | None. |
-| `npm` | `"version"` in `package.json`, at the indentation of its top-level key (spaces or tabs) | `npm install --package-lock-only --ignore-scripts --offline`, and online if that fails, only when `package-lock.json` exists. |
+| `npm` | `"version"` in `package.json`, at the indentation of its top-level key (spaces or tabs) | `npm install --package-lock-only --ignore-scripts --no-audit --no-fund --offline`, and online if that fails, only when `package-lock.json` exists. |
 | `cargo` | `version` under `[package]` in `Cargo.toml` | `cargo update --workspace --offline`, and online if that fails. |
 | `typst` | `version` in `typst.toml` | None. |
 | `quarto-extension` | `version` in `_extensions/*/_extension.yml` | None. |
-| `r` | `Version` in `DESCRIPTION` | None. See [The r preset](#the-r-preset). |
+| `r` | `Version` in `DESCRIPTION`, with the spaces or tabs after `Version:` | None. See [The r preset](#the-r-preset). |
 
 ```yaml
 - name: Bump the version
@@ -257,6 +258,8 @@ The rules for presets:
 - `citation` keeps the form of the file: a quoted value stays quoted, and a plain value stays plain.
 - `quarto-extension` needs exactly one `_extensions/*/_extension.yml`, one level deep.
   Vendored extensions at `_extensions/<owner>/<name>/` never match.
+- `npm` needs the top-level `"version"` on a line of its own, as npm writes `package.json`.
+  A one-line `package.json` stops the step.
 - `cargo` writes only the `version` under `[package]`, not the version of a dependency.
 
 ### The r preset
@@ -344,7 +347,7 @@ It does not change the repository.
 | --- | --- | --- |
 | `notes-file` | `''` | File that contains the changelog section, usually the `notes-file` output of `bump`. |
 | `version` | `''` | Value of `{version}` in the header. Without `notes-file`, also the version whose section `notes` reads from the changelog. |
-| `ecosystems` | `''` | Presets, as in `bump`. Only `r` changes anything: `notes` reads the section `# <Package> <version>` of `NEWS.md`. `notes` reads it only without `notes-file`. |
+| `ecosystems` | `''` | Presets, as in `bump`. Only `r` changes anything: without `notes-file`, `notes` reads the section `# <Package> <version>` of `NEWS.md`. |
 | `changelog` | `CHANGELOG.md` | Path of the changelog. `notes` reads it only without `notes-file`. With the `r` preset, the default means `NEWS.md`. |
 | `changelog-heading` | `## {version} ({date})` | Form of the version headings. `notes` reads it only without `notes-file`. |
 | `header` | `''` | Template file at the start of the body. |
@@ -406,6 +409,7 @@ With `mode: pull-request`, `land` does these steps:
 2. If a pull request is open for this branch, `land` updates its title and body.
    Otherwise, it opens a pull request, with the label `Type: CI/CD :robot:` if the repository has this label.
    `land` adds `labels` and `assignees` when it creates the pull request, and also when it reuses one.
+   It checks that the repository has each label before it pushes the branch.
    With `mode: push`, it ignores them and prints a notice.
 3. With `merge: auto`, it merges the pull request with `merge-method` and deletes the branch.
    If checks block the merge, it turns on auto-merge.
@@ -425,7 +429,7 @@ The next steps, for example a build, use the landed files.
 | `branch` | `release/<tag>` | Head branch of the pull request. Required for `pull-request` without `version`. |
 | `base` | branch of the workflow | Branch to land on: the target of the push, or the base of the pull request. Not for a release. |
 | `body` | release body, else `message` | Pull request body. |
-| `labels` | `''` | Labels of the pull request, comma-separated or one per line. A label that the repository lacks stops the step. |
+| `labels` | `''` | Labels of the pull request, comma-separated or one per line. A label that the repository lacks stops the step before the push. |
 | `assignees` | `''` | Assignees of the pull request, comma-separated or one per line. |
 | `merge` | `auto` | `auto` or `none`. |
 | `merge-method` | `squash` | `squash` or `merge`. |

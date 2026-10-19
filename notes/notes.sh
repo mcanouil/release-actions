@@ -47,14 +47,15 @@ if [[ -n "${NOTES_FILE}" ]]; then
 elif [[ "${r_listed}" == "true" ]]; then
   # NEWS.md replaces the default changelog, not one that the caller names.
   [[ "${CHANGELOG}" != "CHANGELOG.md" ]] || CHANGELOG=NEWS.md
-  [[ -f "${CHANGELOG}" ]] || die "${CHANGELOG} does not exist."
+  [[ -f "${CHANGELOG}" ]] ||
+    die "${CHANGELOG} does not exist. Pass the notes-file output of the bump action, or set changelog to the file that holds the release notes."
   package="$(r_package DESCRIPTION)"
   status=0
   section="$(r_news_section "${CHANGELOG}" "${package}" "${VERSION}")" || status=$?
   case "${status}" in
   0) ;;
-  2) die "${CHANGELOG} has no heading '# ${package} ${VERSION}'." ;;
-  3) die "${CHANGELOG} has more than one heading '# ${package} ${VERSION}'." ;;
+  2) die "${CHANGELOG} has no heading '# ${package} ${VERSION}'. Check that version is the version that bump wrote, or pass the notes-file output of the bump action." ;;
+  3) die "${CHANGELOG} has more than one heading '# ${package} ${VERSION}'. Keep one, then run again." ;;
   *) die "could not read ${CHANGELOG}." ;;
   esac
 else

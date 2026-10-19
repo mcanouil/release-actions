@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- fix: Stop `bump` when `ecosystems` names a preset twice, and name the preset when its lock file command fails.
+- fix: Read the `citation` quote style from the value only, accept a comment after a `[package]` header, and keep the spaces or tabs after `Version:` with the `r` preset.
+- fix: Stop the `npm` preset with a clear message on a one-line `package.json`.
+- fix: Keep trailing spaces, which can be hard breaks, in the `NEWS.md` section of the `r` preset.
+- fix: Check the `labels` of `land` before the push, and pass the default label once when `labels` repeats it.
+- fix: Say what to do in the `notes` errors of the `r` preset, and leave no temporary file behind in `release`.
+
 ## 1.5.0 (2026-10-19)
 
 - feat: Add the `ecosystems` input to `bump`. It adds the targets and the lock file commands of the `citation`, `npm`, `cargo`, `typst` and `quarto-extension` presets. (#9)
