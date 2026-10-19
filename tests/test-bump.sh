@@ -635,3 +635,26 @@ cargo_fixture
 run_bump BUMP=minor ECOSYSTEMS=cargo PM_TOUCH=Cargo.lock AFTER_BUMP='cat Cargo.lock >seen.txt'
 assert_status 0 "${STATUS}" "cargo with after-bump: ${ERR}"
 assert_eq "refreshed 1.5.0" "$(cat seen.txt)" "commands ran before after-bump with VERSION set"
+
+# A preset target that finds no line names the preset and the section.
+fixture
+git_fixture
+printf '[workspace.package]\nversion = "1.4.2"\n' >Cargo.toml
+git add -A
+git commit -q -m files
+run_bump BUMP=minor ECOSYSTEMS=cargo
+refuses "the cargo preset found no line that matches" "cargo without [package]"
+assert_contains "${ERR}" "under [package]" "cargo message names the section"
+case "${ERR}" in
+*"required: false"*)
+  echo "  cargo message: [${ERR}] mentions required: false" >&2
+  exit 1
+  ;;
+esac
+
+# The tool of a preset command is checked before the first write.
+cargo_fixture
+before="$(tree_sum)"
+run_bump BUMP=minor ECOSYSTEMS=cargo PATH="$(path_without cargo)"
+refuses "cargo is not on PATH" "missing cargo"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged without cargo"

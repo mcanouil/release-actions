@@ -43,6 +43,9 @@ t_pattern=()
 t_source=()
 t_required=()
 t_section=()
+# The preset that a target comes from, empty for the caller's targets.
+t_preset=()
+current_preset=""
 
 # Adds the entries of the YAML target list ITEMS to the four lists.
 add_targets() {
@@ -57,6 +60,7 @@ add_targets() {
     t_source+=("${source}")
     t_required+=("${required}")
     t_section+=("${section}")
+    t_preset+=("${current_preset}")
   done < <(yq -r '.[] | [.file, .pattern, (.source | tostring), (.required | tostring), (.section // "")] | .[]' <<<"$1")
 }
 
@@ -74,7 +78,9 @@ if [[ ${#ecosystems[@]} -gt 0 ]]; then
       preset_source_index=${#t_file[@]}
     fi
     items="$(ecosystem_targets "${name}")"
+    current_preset="${name}"
     add_targets "${items}"
+    current_preset=""
   done
 fi
 preset_count=${#t_file[@]}
@@ -86,6 +92,9 @@ if [[ ${#ecosystems[@]} -gt 0 ]]; then
 fi
 if [[ -n "${AFTER_BUMP}" || -n "${preset_commands}" ]]; then
   require_tools git
+  while IFS=' ' read -r tool _; do
+    [[ -z "${tool}" ]] || require_tools "${tool}"
+  done <<<"${preset_commands}"
   git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
     die "after-bump needs a git checkout with a commit, to list the files that it changes, and so do the commands of the ecosystems presets. Run bump after actions/checkout."
 fi
@@ -165,6 +174,9 @@ for ((i = 0; i < n; i++)); do
     if [[ "${count}" -eq 0 ]]; then
       if [[ "${t_required[i]}" == "false" ]]; then
         continue
+      fi
+      if [[ -n "${t_preset[i]}" ]]; then
+        die "${path}: the ${t_preset[i]} preset found no line that matches '${t_pattern[i]}'${t_section[i]:+ under ${t_section[i]}}. Add a line such as '$(expected_line "${t_pattern[i]}")' to the file."
       fi
       die "${path}: no line matches '${t_pattern[i]}'. Add a line such as '$(expected_line "${t_pattern[i]}")', or set required: false on this target if the file can lack it."
     fi
