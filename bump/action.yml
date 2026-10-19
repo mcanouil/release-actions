@@ -5,6 +5,10 @@ inputs:
   bump:
     description: "patch, minor, major, calver, or an explicit version such as 1.2.3."
     required: true
+  ecosystems:
+    description: "Comma-separated presets whose targets come before targets: citation, typst or quarto-extension."
+    required: false
+    default: ""
   targets:
     description: "YAML list of {file, pattern, source?, required?}. Patterns use {version}, {date} and {major}; a leading ^ and a trailing $ anchor them to a line."
     required: false
@@ -73,6 +77,7 @@ runs:
       shell: bash
       env:
         BUMP: ${{ inputs.bump }}
+        ECOSYSTEMS: ${{ inputs.ecosystems }}
         TARGETS: ${{ inputs.targets }}
         VERSION_SOURCE: ${{ inputs.version-source }}
         TAG_PREFIX: ${{ inputs.tag-prefix }}

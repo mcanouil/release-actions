@@ -11,8 +11,11 @@ LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
 source "${LIB}/common.sh"
 # shellcheck disable=SC1091 # lib/version.sh is linted as a file of its own.
 source "${LIB}/version.sh"
+# shellcheck disable=SC1091 # lib/ecosystems.sh is linted as a file of its own.
+source "${LIB}/ecosystems.sh"
 
 BUMP="${BUMP:-}"
+ECOSYSTEMS="${ECOSYSTEMS:-}"
 TARGETS="${TARGETS:-}"
 VERSION_SOURCE="${VERSION_SOURCE:-target}"
 TAG_PREFIX="${TAG_PREFIX:-}"
@@ -38,11 +41,47 @@ fi
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
 require_tag_prefix "${TAG_PREFIX}"
 
-# Targets, as four lists with one entry per target.
+# Targets, as four lists with one entry per target: the targets of the
+# presets in ecosystems first, then the caller's targets.
 t_file=()
 t_pattern=()
 t_source=()
 t_required=()
+
+# Adds the entries of the YAML target list ITEMS to the four lists.
+add_targets() {
+  local file pattern source required
+  # One field per line: @tsv would quote patterns that hold double quotes.
+  while IFS= read -r file && IFS= read -r pattern && IFS= read -r source && IFS= read -r required; do
+    if [[ -z "${file}" || -z "${pattern}" ]]; then
+      die "every entry of targets needs file and pattern, as non-empty strings."
+    fi
+    t_file+=("${file}")
+    t_pattern+=("${pattern}")
+    t_source+=("${source}")
+    t_required+=("${required}")
+  done < <(yq -r '.[] | [.file, .pattern, (.source | tostring), (.required | tostring)] | .[]' <<<"$1")
+}
+
+ecosystems=()
+names="$(ecosystem_names "${ECOSYSTEMS}")"
+while IFS= read -r name; do
+  [[ -z "${name}" ]] || ecosystems+=("${name}")
+done <<<"${names}"
+# Index of the version target of the preset that holds the current version.
+preset_source_index=-1
+if [[ ${#ecosystems[@]} -gt 0 ]]; then
+  source_preset="$(ecosystem_source "${ecosystems[@]}")"
+  for name in "${ecosystems[@]}"; do
+    if [[ ${preset_source_index} -lt 0 && "${name}" == "${source_preset}" ]]; then
+      preset_source_index=${#t_file[@]}
+    fi
+    items="$(ecosystem_targets "${name}")"
+    add_targets "${items}"
+  done
+fi
+preset_count=${#t_file[@]}
+
 if [[ -n "${TARGETS//[[:space:]]/}" ]]; then
   if [[ "$(yq -r 'tag' <<<"${TARGETS}" 2>/dev/null || true)" != "!!seq" ]]; then
     die "targets is not a YAML list. Write one '- file: ...' entry per target."
@@ -65,16 +104,7 @@ if [[ -n "${TARGETS//[[:space:]]/}" ]]; then
       die "required must be true or false in every entry of targets."
     fi
   done < <(yq -r '.[] | [(.file | tag), (.pattern | tag), (.source | tag), (.required | tag)] | @tsv' <<<"${TARGETS}")
-  # One field per line: @tsv would quote patterns that hold double quotes.
-  while IFS= read -r file && IFS= read -r pattern && IFS= read -r source && IFS= read -r required; do
-    if [[ -z "${file}" || -z "${pattern}" ]]; then
-      die "every entry of targets needs file and pattern, as non-empty strings."
-    fi
-    t_file+=("${file}")
-    t_pattern+=("${pattern}")
-    t_source+=("${source}")
-    t_required+=("${required}")
-  done < <(yq -r '.[] | [.file, .pattern, (.source | tostring), (.required | tostring)] | .[]' <<<"${TARGETS}")
+  add_targets "${TARGETS}"
 fi
 n=${#t_file[@]}
 
@@ -97,6 +127,24 @@ for ((i = 0; i < n; i++)); do
     source_index=${i}
   fi
 done
+# A caller target with source: true overrides the presets.
+if [[ ${source_index} -lt 0 ]]; then
+  source_index=${preset_source_index}
+fi
+
+# A target listed twice, such as a caller target that a preset writes too.
+if [[ ${#ecosystems[@]} -gt 0 ]]; then
+  for ((i = 0; i < n; i++)); do
+    for ((j = i + 1; j < n; j++)); do
+      if [[ "${t_file[i]}" == "${t_file[j]}" && "${t_pattern[i]}" == "${t_pattern[j]}" ]]; then
+        if [[ ${i} -lt ${preset_count} && ${j} -ge ${preset_count} ]]; then
+          die "the target ${t_file[i]} with the pattern '${t_pattern[i]}' is listed twice. Remove it from targets, since a preset in ecosystems already writes it."
+        fi
+        die "the target ${t_file[i]} with the pattern '${t_pattern[i]}' is listed twice. Keep one."
+      fi
+    done
+  done
+fi
 
 # Every (file, pattern) pair to rewrite.
 e_file=()

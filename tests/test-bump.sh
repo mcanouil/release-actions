@@ -464,3 +464,77 @@ run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='rm a'
 assert_status 0 "${STATUS}" "prefix paths: ${ERR}"
 assert_eq $'CHANGELOG.md\nCITATION.cff\nREADME.md\n_extensions/demo/_extension.yml\ntypst.toml' \
   "$(multiline_output files "${OUT}")" "prefix paths keep only what after-bump changed"
+
+# Ecosystem presets expand into targets before the caller's targets.
+fixture
+sed -i.bak 's/^version: 1.4.2$/version: "1.4.2"/' CITATION.cff && rm CITATION.cff.bak
+run_bump BUMP=patch ECOSYSTEMS=citation
+assert_status 0 "${STATUS}" "quoted citation preset: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "citation alone is the source"
+assert_eq 'version: "1.4.3"' "$(sed -n 3p CITATION.cff)" "quoted version kept quoted"
+assert_eq 'date-released: "2026-10-15"' "$(sed -n 4p CITATION.cff)" "quoted date kept quoted"
+assert_eq $'CHANGELOG.md\nCITATION.cff' "$(multiline_output files "${OUT}")" "citation preset files"
+
+fixture
+sed -i.bak 's/^date-released: "2026-01-02"$/date-released: 2026-01-02/' CITATION.cff && rm CITATION.cff.bak
+run_bump BUMP=patch ECOSYSTEMS=citation
+assert_status 0 "${STATUS}" "unquoted citation preset: ${ERR}"
+assert_eq 'version: 1.4.3' "$(sed -n 3p CITATION.cff)" "unquoted version kept unquoted"
+assert_eq 'date-released: 2026-10-15' "$(sed -n 4p CITATION.cff)" "unquoted date kept unquoted"
+
+fixture
+sed -i.bak 's/^version: 1.4.2$/version: 1.4.0/' CITATION.cff && rm CITATION.cff.bak
+run_bump BUMP=patch ECOSYSTEMS=$'typst,\n citation'
+assert_status 0 "${STATUS}" "typst and citation presets: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "typst.toml is the source"
+assert_eq 'version = "1.4.3"' "$(sed -n 3p typst.toml)" "typst.toml written"
+assert_eq 'version: 1.4.3' "$(sed -n 3p CITATION.cff)" "CITATION.cff written"
+assert_eq $'CHANGELOG.md\nCITATION.cff\ntypst.toml' "$(multiline_output files "${OUT}")" "typst and citation files"
+
+fixture
+sed -i.bak 's/^version: 1.4.2$/version: 1.4.0/' CITATION.cff && rm CITATION.cff.bak
+run_bump BUMP=patch ECOSYSTEMS="citation" TARGETS="- file: typst.toml
+  pattern: '^version = \"{version}\"\$'
+  source: true"
+assert_status 0 "${STATUS}" "caller source over citation: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "caller source: true wins over the presets"
+
+fixture
+mkdir -p _extensions/acme/dep
+printf 'title: Dep\nversion: 9.9.9\n' >_extensions/acme/dep/_extension.yml
+run_bump BUMP=minor ECOSYSTEMS=quarto-extension TARGETS="- file: README.md
+  pattern: '@preview/demo:{version}'"
+assert_status 0 "${STATUS}" "quarto-extension preset: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "own manifest is the source"
+assert_eq "version: 1.5.0" "$(sed -n 2p _extensions/demo/_extension.yml)" "own manifest written"
+assert_eq "version: 9.9.9" "$(sed -n 2p _extensions/acme/dep/_extension.yml)" "vendored manifest untouched"
+assert_eq 2 "$(grep -c '@preview/demo:1.5.0' README.md)" "caller target written after the preset"
+
+fixture
+mkdir -p _extensions/other
+printf 'version: 1.4.2\n' >_extensions/other/_extension.yml
+run_bump BUMP=patch ECOSYSTEMS=quarto-extension
+refuses "_extensions/demo/_extension.yml and _extensions/other/_extension.yml" "two extension manifests"
+rm -r _extensions
+run_bump BUMP=patch ECOSYSTEMS=quarto-extension
+refuses "no file matches '_extensions/*/_extension.yml'" "no extension manifest"
+
+fixture
+before="$(tree_sum)"
+run_bump BUMP=patch ECOSYSTEMS=typst TARGETS="- file: typst.toml
+  pattern: '^version = \"{version}\"\$'"
+refuses "listed twice. Remove it from targets, since a preset" "caller target duplicates a preset target"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged after a duplicate target"
+
+fixture
+rm typst.toml
+run_bump BUMP=patch ECOSYSTEMS="citation, typst"
+refuses "no file matches 'typst.toml'" "typst preset with no typst.toml"
+
+fixture
+run_bump BUMP=patch ECOSYSTEMS="typst, foo"
+refuses "unknown ecosystem 'foo'" "unknown ecosystem"
+
+fixture
+run_bump BUMP=patch ECOSYSTEMS="typst, typst"
+refuses "is listed twice. Keep one." "preset listed twice"
