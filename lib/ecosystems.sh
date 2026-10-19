@@ -75,9 +75,10 @@ ecosystem_targets() {
       fi
       ecosystem_item '_extensions/*/_extension.yml' '^version: {version}$'
       ;;
-    *)
-      die "the ${name} preset is not available yet. Use citation, npm, cargo, typst or quarto-extension, or list its targets in targets."
+    r)
+      ecosystem_item DESCRIPTION '^Version: {version}$'
       ;;
+    *) die "unknown ecosystem '${name}'. Use ${ECOSYSTEM_LIST}." ;;
     esac
   done
 }
@@ -88,7 +89,7 @@ ecosystem_commands() {
   local name
   for name in "$@"; do
     case "${name}" in
-    citation | typst | quarto-extension) ;;
+    citation | typst | quarto-extension | r) ;;
     npm)
       # Refreshes the root entry of the lock file without a network call.
       if [[ -f package-lock.json ]]; then
@@ -98,7 +99,7 @@ ecosystem_commands() {
     cargo)
       printf '%s\n' 'cargo update --workspace --offline || cargo update --workspace'
       ;;
-    *) die "the ${name} preset is not available yet. Use citation, npm, cargo, typst or quarto-extension." ;;
+    *) die "unknown ecosystem '${name}'. Use ${ECOSYSTEM_LIST}." ;;
     esac
   done
 }

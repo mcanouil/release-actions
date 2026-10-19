@@ -28,6 +28,7 @@ assert_contains "${ERR}" "citation, npm, cargo, typst, quarto-extension, r" "unk
 assert_eq "citation" "$(ecosystem_source citation)" "citation alone is the source"
 assert_eq "typst" "$(ecosystem_source citation typst)" "a manifest preset wins over citation"
 assert_eq "quarto-extension" "$(ecosystem_source quarto-extension typst)" "first manifest preset in list order"
+assert_eq "r" "$(ecosystem_source r citation)" "r is a manifest preset"
 assert_eq "" "$(ecosystem_source)" "no preset, no source"
 
 # Commands: none for the target-only presets.
@@ -47,8 +48,9 @@ assert_eq "" "$(ecosystem_commands npm)" "npm without a lock file"
 printf '{}\n' >package-lock.json
 assert_eq 'npm install --package-lock-only --ignore-scripts --offline' "$(ecosystem_commands npm)" "npm with a lock file"
 rm package-lock.json
-run ecosystem_targets r
-refuses "the r preset is not available yet" "r preset"
+assert_eq $'- file: \'DESCRIPTION\'\n  pattern: \'^Version: {version}$\'' \
+  "$(ecosystem_targets r)" "r target"
+assert_eq "" "$(ecosystem_commands r)" "r has no command"
 
 assert_eq $'- file: \'typst.toml\'\n  pattern: \'^version = "{version}"$\'' \
   "$(ecosystem_targets typst)" "typst target"

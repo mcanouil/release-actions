@@ -15,7 +15,9 @@
 #
 # A pattern is literal text with {version}, {date} and {major} placeholders.
 # A leading ^ and a trailing $ anchor it to a line; a trailing $ also matches
-# before a carriage return.
+# before a carriage return. {version} is X.Y.Z or X.Y.Z-suffix, or, when the
+# TARGET_VERSION_FORM environment variable is r, an R package version of two
+# to four parts.
 use strict;
 use warnings;
 
@@ -25,7 +27,9 @@ sub fail {
 }
 
 my %placeholder = (
-  version => '[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?',
+  version => ($ENV{TARGET_VERSION_FORM} // '') eq 'r'
+    ? '[0-9]+(?:\.[0-9]+){1,3}'
+    : '[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?',
   date    => '[0-9]{4}-[0-9]{2}-[0-9]{2}',
   major   => '[0-9]+(?![.0-9])',
 );

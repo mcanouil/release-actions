@@ -13,6 +13,8 @@ source "${LIB}/common.sh"
 source "${LIB}/version.sh"
 # shellcheck disable=SC1091 # lib/ecosystems.sh is linted as a file of its own.
 source "${LIB}/ecosystems.sh"
+# shellcheck disable=SC1091 # lib/r.sh is linted as a file of its own.
+source "${LIB}/r.sh"
 
 BUMP="${BUMP:-}"
 ECOSYSTEMS="${ECOSYSTEMS:-}"
@@ -26,7 +28,7 @@ AFTER_BUMP="${AFTER_BUMP:-}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 placeholder_regex='\{(version|date|major)\}'
 
-[[ -n "${BUMP}" ]] || die "bump is empty. Use patch, minor, major, calver, or a version such as 1.2.3."
+[[ -n "${BUMP}" ]] || die "bump is empty. Use patch, minor, major, calver, dev, or a version such as 1.2.3."
 require_tools perl yq gh
 RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 # Said when the files already hold a version that a failed run bumped.
@@ -69,6 +71,19 @@ names="$(ecosystem_names "${ECOSYSTEMS}")"
 while IFS= read -r name; do
   [[ -z "${name}" ]] || ecosystems+=("${name}")
 done <<<"${names}"
+# The r preset switches the version scheme, the tag check and the changelog
+# model to the usethis conventions for R packages.
+r_listed=false
+for name in ${ecosystems[@]+"${ecosystems[@]}"}; do
+  [[ "${name}" != "r" ]] || r_listed=true
+done
+if [[ "${r_listed}" == "true" ]]; then
+  export TARGET_VERSION_FORM=r
+  # NEWS.md replaces the default changelog, not one that the caller names.
+  [[ "${CHANGELOG}" != "CHANGELOG.md" ]] || CHANGELOG=NEWS.md
+elif [[ "${BUMP}" == "dev" ]]; then
+  die "bump is dev, which only the r preset uses. Add r to ecosystems, or use patch, minor, major, calver, or a version such as 1.2.3."
+fi
 # Index of the version target of the preset that holds the current version.
 preset_source_index=-1
 if [[ ${#ecosystems[@]} -gt 0 ]]; then
@@ -236,15 +251,66 @@ tag)
   ;;
 esac
 
-version="$(next_version "${current}" "${BUMP}" "${RELEASE_DATE}")"
+if [[ "${r_listed}" == "true" ]]; then
+  version="$(r_next_version "${current}" "${BUMP}")"
+else
+  version="$(next_version "${current}" "${BUMP}" "${RELEASE_DATE}")"
+fi
 major="$(version_major "${version}")"
 minor="$(version_minor "${version}")"
+
+# R development versions have four parts, and need no tag or release.
+r_development() {
+  [[ "${r_listed}" == "true" && "$1" =~ ^[0-9]+(\.[0-9]+){3}$ ]]
+}
 
 # Changelog.
 notes_file="$(temp_dir)/release-notes-${version}.md"
 : >"${notes_file}"
+
+# dev on a development version: nothing to write, and no command to run.
+if [[ "${BUMP}" == "dev" && "${version}" == "${current}" ]]; then
+  set_output version "${version}"
+  set_output previous "${current}"
+  set_output major "${major}"
+  set_output minor "${minor}"
+  set_output date "${RELEASE_DATE}"
+  set_output notes-file "${notes_file}"
+  set_multiline_output files ""
+  printf '%s is already a development version. Nothing to bump.\n' "${current}" >&2
+  exit 0
+fi
+
 heading="$(printf '%s' "${CHANGELOG_HEADING}" | FILL_version="${version}" FILL_date="${RELEASE_DATE}" fill_template version,date changelog-heading)"
-if [[ -n "${CHANGELOG}" ]]; then
+if [[ -n "${CHANGELOG}" && "${r_listed}" == "true" ]]; then
+  package="$(r_package DESCRIPTION)"
+  development="# ${package} (development version)"
+  heading="# ${package} ${version}"
+  if [[ ! -f "${CHANGELOG}" ]]; then
+    die "${CHANGELOG} does not exist. Create it with a '${development}' heading, or set changelog to an empty string."
+  fi
+  if [[ "${BUMP}" != "dev" ]]; then
+    r_news_pending "${CHANGELOG}" "${package}" ||
+      die "${CHANGELOG} does not start with the heading '${development}'. Add it above the last release, with the changes of this release under it."
+    status=0
+    r_news_section "${CHANGELOG}" "${package}" "(development version)" >"${notes_file}" || status=$?
+    case "${status}" in
+    0) ;;
+    3) die "${CHANGELOG} has more than one '${development}' heading. Keep the first one." ;;
+    *) die "could not read ${CHANGELOG}." ;;
+    esac
+    status=0
+    r_news_section "${CHANGELOG}" "${package}" "${version}" >/dev/null || status=$?
+    case "${status}" in
+    2) ;;
+    0 | 3) die "${CHANGELOG} already has the heading '${heading}'. If release ${TAG_PREFIX}${version} does not exist, a run bumped it and failed. ${unreleased_hint/\{version\}/${TAG_PREFIX}${version}}" ;;
+    *) die "could not read ${CHANGELOG}." ;;
+    esac
+    if [[ -z "$(tr -d '[:space:]' <"${notes_file}")" && "${ALLOW_EMPTY}" != "true" ]]; then
+      die "the development section of ${CHANGELOG} is empty. Add entries under '${development}', or set allow-empty: true."
+    fi
+  fi
+elif [[ -n "${CHANGELOG}" ]]; then
   if [[ ! -f "${CHANGELOG}" ]]; then
     die "${CHANGELOG} does not exist. Create it with a '## Unreleased' heading, or set changelog to an empty string."
   fi
@@ -269,12 +335,14 @@ if [[ -n "${CHANGELOG}" ]]; then
 fi
 
 # The release step checks this too, but only after the bump has landed.
-refuse_existing_release "${REPOSITORY}" "${TAG_PREFIX}${version}"
+if ! r_development "${version}"; then
+  refuse_existing_release "${REPOSITORY}" "${TAG_PREFIX}${version}"
+fi
 
 # Files that hold a version above the latest release hold a bump that a failed
 # run landed; bumping again would skip that version. The tags come from the API,
 # since a checkout holds none by default.
-if [[ "${VERSION_SOURCE}" == "target" ]]; then
+if [[ "${VERSION_SOURCE}" == "target" ]] && ! r_development "${current}"; then
   refs="$(gh api --paginate "repos/${REPOSITORY}/git/matching-refs/tags/${TAG_PREFIX}" --jq '.[].ref' 2>&1)" ||
     die "could not list the tags of ${REPOSITORY}: ${refs}. Check that the token can read ${REPOSITORY}."
   released="$(printf '%s\n' "${refs//refs\/tags\//}" | highest_version "${TAG_PREFIX}")"
@@ -289,7 +357,13 @@ export VERSION="${version}" DATE="${RELEASE_DATE}" MAJOR="${major}"
 for ((i = 0; i < ${#e_file[@]}; i++)); do
   perl "${LIB}/target.pl" replace "${e_pattern[i]}" "${e_file[i]}" "${e_section[i]}" >/dev/null
 done
-if [[ -n "${CHANGELOG}" ]]; then
+if [[ -n "${CHANGELOG}" && "${r_listed}" == "true" ]]; then
+  if [[ "${BUMP}" == "dev" ]]; then
+    r_roll_news "${CHANGELOG}" "${package}" dev
+  else
+    r_roll_news "${CHANGELOG}" "${package}" "${version}"
+  fi
+elif [[ -n "${CHANGELOG}" ]]; then
   HEADING="${heading}" perl "${LIB}/section.pl" roll "${CHANGELOG}"
 fi
 # Prints each path that differs from HEAD, staged or not, with the hash of its

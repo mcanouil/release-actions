@@ -99,3 +99,11 @@ assert_eq $'0.0.1\n1.4.2\n9.9.9\n8.8.8' "$(find_matches '^version = "{version}"$
 count="$(VERSION=2.0.0 DATE=2026-10-15 MAJOR=2 perl "${script}" replace '^version = "{version}"$' "${file}" '[package]')"
 assert_eq 1 "${count}" "section replace count"
 assert_eq $'version = "0.0.1"\nversion = "2.0.0"\nversion = "9.9.9"\nversion = "8.8.8"' "$(grep '^version' "${file}")" "section replace leaves the rest"
+
+# The r form of {version} takes two to four parts.
+printf 'Version: 2.0.8.9000\nOther: 1.2\n' >"${file}"
+assert_eq "" "$(find_matches '^Version: {version}$')" "four parts outside the r form"
+assert_eq "2.0.8.9000" "$(TARGET_VERSION_FORM=r find_matches '^Version: {version}$')" "four parts in the r form"
+assert_eq "1.2" "$(TARGET_VERSION_FORM=r find_matches '^Other: {version}$')" "two parts in the r form"
+VERSION=2.1.0 TARGET_VERSION_FORM=r perl "${script}" replace '^Version: {version}$' "${file}" >/dev/null
+assert_eq "Version: 2.1.0" "$(sed -n 1p "${file}")" "replace in the r form"

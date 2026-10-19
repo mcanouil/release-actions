@@ -3,10 +3,10 @@ description: Write the next version to target files and roll the Unreleased sect
 
 inputs:
   bump:
-    description: "patch, minor, major, calver, or an explicit version such as 1.2.3."
+    description: "patch, minor, major, calver, dev, or an explicit version such as 1.2.3. dev needs the r preset."
     required: true
   ecosystems:
-    description: "Comma-separated presets whose targets come before targets: citation, typst or quarto-extension."
+    description: "Comma-separated presets whose targets come before targets: citation, npm, cargo, typst, quarto-extension or r. r also switches to R package versions and NEWS.md."
     required: false
     default: ""
   targets:
@@ -22,7 +22,7 @@ inputs:
     required: false
     default: ""
   changelog:
-    description: "Path of the changelog. An empty string turns off the changelog roll."
+    description: "Path of the changelog. An empty string turns off the changelog roll. With the r preset, the default becomes NEWS.md."
     required: false
     default: "CHANGELOG.md"
   changelog-heading:
