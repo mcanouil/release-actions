@@ -148,6 +148,28 @@ EOF
   chmod +x "${SCRATCH}/bin/gh"
 }
 
+# Puts a fake npm and a fake cargo first on PATH. Each call records its
+# arguments in PM_LOG as "<tool> <arguments>". PM_FAIL makes the call fail,
+# or only the calls with --offline when it is "offline". PM_TOUCH names a file
+# that the call rewrites, as a lock refresh does.
+install_fake_pm() {
+  local tool
+  mkdir -p "${SCRATCH}/bin"
+  export PATH="${SCRATCH}/bin:${PATH}"
+  for tool in npm cargo; do
+    cat >"${SCRATCH}/bin/${tool}" <<'EOF'
+#!/usr/bin/env bash
+printf '%s %s\n' "$(basename "$0")" "$*" >>"${PM_LOG}"
+if [[ "${PM_FAIL:-}" == "all" || ("${PM_FAIL:-}" == "offline" && "$*" == *--offline*) ]]; then
+  echo "$(basename "$0"): no network" >&2
+  exit 1
+fi
+[[ -z "${PM_TOUCH:-}" ]] || printf 'refreshed %s\n' "${VERSION:-}" >"${PM_TOUCH}"
+EOF
+    chmod +x "${SCRATCH}/bin/${tool}"
+  done
+}
+
 # Prints a PATH value with the commands that the scripts use, except TOOL, to
 # test the message for a missing tool.
 path_without() {

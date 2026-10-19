@@ -32,11 +32,6 @@ RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 # Said when the files already hold a version that a failed run bumped.
 unreleased_hint="Create release {version} on the commit that bumped it, or revert that commit with a pull request, then dispatch again."
 require_bool allow-empty "${ALLOW_EMPTY}"
-if [[ -n "${AFTER_BUMP}" ]]; then
-  require_tools git
-  git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
-    die "after-bump needs a git checkout with a commit, to list the files that it changes. Run bump after actions/checkout."
-fi
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
 require_tag_prefix "${TAG_PREFIX}"
@@ -47,12 +42,13 @@ t_file=()
 t_pattern=()
 t_source=()
 t_required=()
+t_section=()
 
 # Adds the entries of the YAML target list ITEMS to the four lists.
 add_targets() {
-  local file pattern source required
+  local file pattern source required section
   # One field per line: @tsv would quote patterns that hold double quotes.
-  while IFS= read -r file && IFS= read -r pattern && IFS= read -r source && IFS= read -r required; do
+  while IFS= read -r file && IFS= read -r pattern && IFS= read -r source && IFS= read -r required && IFS= read -r section; do
     if [[ -z "${file}" || -z "${pattern}" ]]; then
       die "every entry of targets needs file and pattern, as non-empty strings."
     fi
@@ -60,7 +56,8 @@ add_targets() {
     t_pattern+=("${pattern}")
     t_source+=("${source}")
     t_required+=("${required}")
-  done < <(yq -r '.[] | [.file, .pattern, (.source | tostring), (.required | tostring)] | .[]' <<<"$1")
+    t_section+=("${section}")
+  done < <(yq -r '.[] | [.file, .pattern, (.source | tostring), (.required | tostring), (.section // "")] | .[]' <<<"$1")
 }
 
 ecosystems=()
@@ -81,6 +78,17 @@ if [[ ${#ecosystems[@]} -gt 0 ]]; then
   done
 fi
 preset_count=${#t_file[@]}
+
+# The commands of the presets, one per line, run before after-bump.
+preset_commands=""
+if [[ ${#ecosystems[@]} -gt 0 ]]; then
+  preset_commands="$(ecosystem_commands "${ecosystems[@]}")"
+fi
+if [[ -n "${AFTER_BUMP}" || -n "${preset_commands}" ]]; then
+  require_tools git
+  git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+    die "after-bump needs a git checkout with a commit, to list the files that it changes, and so do the commands of the ecosystems presets. Run bump after actions/checkout."
+fi
 
 if [[ -n "${TARGETS//[[:space:]]/}" ]]; then
   if [[ "$(yq -r 'tag' <<<"${TARGETS}" 2>/dev/null || true)" != "!!seq" ]]; then
@@ -136,6 +144,7 @@ fi
 e_file=()
 e_pattern=()
 e_target=()
+e_section=()
 
 # Prints PATTERN as the line it expects, without its anchors, such as
 # "version: X.Y.Z" for "^version: {version}$".
@@ -152,7 +161,7 @@ for ((i = 0; i < n; i++)); do
   while IFS= read -r path; do
     [[ -n "${path}" ]] || continue
     matched_files=$((matched_files + 1))
-    count="$(perl "${LIB}/target.pl" find "${t_pattern[i]}" "${path}" | wc -l | tr -d ' ')"
+    count="$(perl "${LIB}/target.pl" find "${t_pattern[i]}" "${path}" "${t_section[i]}" | wc -l | tr -d ' ')"
     if [[ "${count}" -eq 0 ]]; then
       if [[ "${t_required[i]}" == "false" ]]; then
         continue
@@ -162,6 +171,7 @@ for ((i = 0; i < n; i++)); do
     e_file+=("${path}")
     e_pattern+=("${t_pattern[i]}")
     e_target+=("${i}")
+    e_section+=("${t_section[i]}")
   done < <(compgen -G "${t_file[i]}" || true)
   if [[ ${matched_files} -eq 0 && "${t_required[i]}" != "false" ]]; then
     die "no file matches '${t_file[i]}'. Fix the path, or set required: false on this target."
@@ -198,7 +208,7 @@ target)
   if [[ "$(wc -l <<<"${source_files}" | tr -d ' ')" -ne 1 ]]; then
     die "'${t_file[source_index]}' matches several files. The source target must name one file."
   fi
-  versions="$(perl "${LIB}/target.pl" find "${t_pattern[source_index]}" "${source_files}")"
+  versions="$(perl "${LIB}/target.pl" find "${t_pattern[source_index]}" "${source_files}" "${t_section[source_index]}")"
   count="$(grep -c . <<<"${versions}" || true)"
   if [[ "${count}" -ne 1 ]]; then
     die "${source_files}: the source pattern '${t_pattern[source_index]}' matches ${count} times. It must match once; anchor it with ^ and \$."
@@ -265,7 +275,7 @@ fi
 # Writes.
 export VERSION="${version}" DATE="${RELEASE_DATE}" MAJOR="${major}"
 for ((i = 0; i < ${#e_file[@]}; i++)); do
-  perl "${LIB}/target.pl" replace "${e_pattern[i]}" "${e_file[i]}" >/dev/null
+  perl "${LIB}/target.pl" replace "${e_pattern[i]}" "${e_file[i]}" "${e_section[i]}" >/dev/null
 done
 if [[ -n "${CHANGELOG}" ]]; then
   HEADING="${heading}" perl "${LIB}/section.pl" roll "${CHANGELOG}"
@@ -288,10 +298,17 @@ tree_state() {
 # Only what after-bump changes joins files: earlier steps of the job can leave
 # other changes in the tree.
 changed=""
-if [[ -n "${AFTER_BUMP}" ]]; then
+if [[ -n "${AFTER_BUMP}" || -n "${preset_commands}" ]]; then
   before="$(tree_state)" || die "could not read the state of the tree before after-bump."
-  bash -euo pipefail -c "${AFTER_BUMP}" ||
-    die "after-bump failed: ${AFTER_BUMP}. The version is written but nothing is committed; fix the command and dispatch again."
+  while IFS= read -r command; do
+    [[ -n "${command}" ]] || continue
+    bash -euo pipefail -c "${command}" ||
+      die "the command of an ecosystems preset failed: ${command}. The version is written but nothing is committed; fix the command and dispatch again."
+  done <<<"${preset_commands}"
+  if [[ -n "${AFTER_BUMP}" ]]; then
+    bash -euo pipefail -c "${AFTER_BUMP}" ||
+      die "after-bump failed: ${AFTER_BUMP}. The version is written but nothing is committed; fix the command and dispatch again."
+  fi
   after="$(tree_state)" || die "could not list the files that after-bump changed."
   changed="$(LC_ALL=C comm -13 <(printf '%s\n' "${before}") <(printf '%s\n' "${after}") | sed 's/ [^ ]*$//')"
 fi

@@ -1,12 +1,17 @@
 #!/usr/bin/env perl
 # Finds or replaces the matches of a target pattern in a file.
 #
-#   target.pl find PATTERN FILE     Prints one line per match: the {version}
+#   target.pl find PATTERN FILE [SECTION]
+#                                   Prints one line per match: the {version}
 #                                   value when the pattern has one, else the
 #                                   whole match.
-#   target.pl replace PATTERN FILE  Rewrites FILE in place with the values of
+#   target.pl replace PATTERN FILE [SECTION]
+#                                   Rewrites FILE in place with the values of
 #                                   the VERSION, DATE and MAJOR environment
 #                                   variables, and prints the number of matches.
+#
+# SECTION, such as [package], limits the matches to the lines under that header
+# line, up to the next line that starts with [.
 #
 # A pattern is literal text with {version}, {date} and {major} placeholders.
 # A leading ^ and a trailing $ anchor it to a line; a trailing $ also matches
@@ -25,8 +30,8 @@ my %placeholder = (
   major   => '[0-9]+(?![.0-9])',
 );
 
-my ($mode, $pattern, $file) = @ARGV;
-fail('usage: target.pl find|replace PATTERN FILE')
+my ($mode, $pattern, $file, $section) = @ARGV;
+fail('usage: target.pl find|replace PATTERN FILE [SECTION]')
   unless defined $file && $mode =~ /\A(?:find|replace)\z/;
 
 my $start = $pattern =~ s/\A\^// ? '^' : '';
@@ -48,6 +53,22 @@ my $compiled = qr/$start$regex$end/m;
 open my $in, '<', $file or fail("cannot read $file: $!");
 my $text = do { local $/; <$in> };
 close $in;
+
+# The text before the section, the section body and the text after it.
+my ($head, $tail) = ('', '');
+if (defined $section && $section ne '') {
+  if ($text =~ /^\Q$section\E[ \t]*\r?\n/m) {
+    $head = substr($text, 0, $+[0]);
+    my $rest = substr($text, $+[0]);
+    if ($rest =~ /^\[/m) {
+      $tail = substr($rest, $-[0]);
+      $rest = substr($rest, 0, $-[0]);
+    }
+    $text = $rest;
+  } else {
+    $text = '';
+  }
+}
 
 if ($mode eq 'find') {
   my ($version_index) = grep { $kinds[$_] eq 'version' } 0 .. $#kinds;
@@ -73,7 +94,7 @@ $text =~ s{$compiled}{
 
 if ($count > 0) {
   open my $out, '>', $file or fail("cannot write $file: $!");
-  print {$out} $text;
+  print {$out} $head, $text, $tail;
   close $out or fail("cannot write $file: $!");
 }
 print "$count\n";

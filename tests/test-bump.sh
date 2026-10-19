@@ -8,6 +8,8 @@ export RUNNER_TEMP="${SCRATCH}/tmp" GITHUB_REPOSITORY=o/r GH_TAGS="${SCRATCH}/ta
 mkdir -p "${RUNNER_TEMP}"
 : >"${GH_TAGS}"
 install_fake_gh
+export PM_LOG="${SCRATCH}/pm.log"
+install_fake_pm
 
 # Writes a fresh fixture repository at SCRATCH/repo and moves into it.
 fixture() {
@@ -545,3 +547,91 @@ run_bump BUMP=patch ECOSYSTEMS=quarto-extension TARGETS="- file: _extensions/dem
   pattern: '^version: {version}\$'"
 refuses "listed twice. Remove it from targets, since a preset" "caller path duplicates the quarto-extension glob"
 assert_eq "${before}" "$(tree_sum)" "tree unchanged after a duplicate path"
+
+# npm preset: top-level version only, then one lock refresh.
+npm_fixture() {
+  fixture
+  git_fixture
+  cat >package.json <<'EOF'
+{
+  "name": "demo",
+  "version": "1.4.2",
+  "dependencies": {
+    "left-pad": {
+      "version": "1.0.0",
+      "other": 1
+    }
+  }
+}
+EOF
+  printf '{"lockfileVersion": 3}\n' >package-lock.json
+  git add -A
+  git commit -q -m files
+  : >"${PM_LOG}"
+}
+
+npm_fixture
+run_bump BUMP=minor ECOSYSTEMS=npm PM_TOUCH=package-lock.json
+assert_status 0 "${STATUS}" "npm preset: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "package.json is the source"
+assert_eq '  "version": "1.5.0",' "$(sed -n 3p package.json)" "package.json version written"
+assert_eq '      "version": "1.0.0",' "$(sed -n 6p package.json)" "nested version untouched"
+assert_eq "npm install --package-lock-only --ignore-scripts --offline" "$(cat "${PM_LOG}")" "one npm call"
+assert_eq $'CHANGELOG.md\npackage-lock.json\npackage.json' "$(multiline_output files "${OUT}")" "npm files"
+
+npm_fixture
+git rm -q package-lock.json
+git commit -q -m nolock
+run_bump BUMP=minor ECOSYSTEMS=npm PM_TOUCH=package-lock.json
+assert_status 0 "${STATUS}" "npm preset without a lock file: ${ERR}"
+assert_eq "" "$(cat "${PM_LOG}")" "no npm call without package-lock.json"
+assert_eq $'CHANGELOG.md\npackage.json' "$(multiline_output files "${OUT}")" "npm files without a lock file"
+
+npm_fixture
+run_bump BUMP=minor ECOSYSTEMS=npm PM_FAIL=all
+refuses "the command of an ecosystems preset failed: npm install" "failing npm"
+
+# cargo preset: [package] version only, offline first, then online.
+cargo_fixture() {
+  fixture
+  git_fixture
+  cat >Cargo.toml <<'EOF'
+[package]
+name = "demo"
+version = "1.4.2"
+edition = "2021"
+
+[dependencies]
+version = "9.9.9"
+EOF
+  printf '# lock\n' >Cargo.lock
+  git add -A
+  git commit -q -m files
+  : >"${PM_LOG}"
+}
+
+cargo_fixture
+run_bump BUMP=minor ECOSYSTEMS="cargo, citation" PM_TOUCH=Cargo.lock
+assert_status 0 "${STATUS}" "cargo preset: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "Cargo.toml is the source"
+assert_eq 'version = "1.5.0"' "$(sed -n 3p Cargo.toml)" "[package] version written"
+assert_eq 'version = "9.9.9"' "$(sed -n 7p Cargo.toml)" "[dependencies] version untouched"
+assert_eq "cargo update --workspace --offline" "$(cat "${PM_LOG}")" "cargo offline call"
+assert_eq $'CHANGELOG.md\nCITATION.cff\nCargo.lock\nCargo.toml' "$(multiline_output files "${OUT}")" "cargo files"
+
+cargo_fixture
+run_bump BUMP=minor ECOSYSTEMS=cargo PM_TOUCH=Cargo.lock PM_FAIL=offline
+assert_status 0 "${STATUS}" "cargo falls back online: ${ERR}"
+assert_eq $'cargo update --workspace --offline\ncargo update --workspace' "$(cat "${PM_LOG}")" "cargo online fallback"
+assert_contains "$(multiline_output files "${OUT}")" "Cargo.lock" "lock joins files after the fallback"
+
+cargo_fixture
+run_bump BUMP=minor ECOSYSTEMS=cargo PM_FAIL=all
+refuses "the command of an ecosystems preset failed: cargo update" "failing cargo"
+
+# The preset commands run before after-bump, with the same environment.
+cargo_fixture
+# shellcheck disable=SC2016 # after-bump expands the variables, not this shell.
+run_bump BUMP=minor ECOSYSTEMS=cargo PM_TOUCH=Cargo.lock AFTER_BUMP='cat Cargo.lock >seen.txt'
+assert_status 0 "${STATUS}" "cargo with after-bump: ${ERR}"
+assert_eq "refreshed 1.5.0" "$(cat seen.txt)" "commands ran before after-bump with VERSION set"

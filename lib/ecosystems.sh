@@ -21,9 +21,13 @@ ecosystem_names() {
 }
 
 # Prints one YAML target item for FILE and PATTERN, in single-quoted scalars.
+# The optional SECTION limits the pattern to the lines under that header.
 ecosystem_item() {
   local quote="'" double="''"
   printf -- "- file: '%s'\n  pattern: '%s'\n" "${1//${quote}/${double}}" "${2//${quote}/${double}}"
+  if [[ -n "${3:-}" ]]; then
+    printf "  section: '%s'\n" "${3//${quote}/${double}}"
+  fi
 }
 
 # Prints the quote character around the value of the first KEY line of FILE,
@@ -50,6 +54,12 @@ ecosystem_targets() {
       quote="$(ecosystem_quote date-released CITATION.cff)"
       ecosystem_item CITATION.cff "^date-released: ${quote}{date}${quote}\$"
       ;;
+    npm)
+      ecosystem_item package.json '^  "version": "{version}",$'
+      ;;
+    cargo)
+      ecosystem_item Cargo.toml '^version = "{version}"$' '[package]'
+      ;;
     typst)
       ecosystem_item typst.toml '^version = "{version}"$'
       ;;
@@ -66,7 +76,7 @@ ecosystem_targets() {
       ecosystem_item '_extensions/*/_extension.yml' '^version: {version}$'
       ;;
     *)
-      die "the ${name} preset is not available yet. Use citation, typst or quarto-extension, or list its targets in targets."
+      die "the ${name} preset is not available yet. Use citation, npm, cargo, typst or quarto-extension, or list its targets in targets."
       ;;
     esac
   done
@@ -79,7 +89,16 @@ ecosystem_commands() {
   for name in "$@"; do
     case "${name}" in
     citation | typst | quarto-extension) ;;
-    *) die "the ${name} preset is not available yet. Use citation, typst or quarto-extension." ;;
+    npm)
+      # Refreshes the root entry of the lock file without a network call.
+      if [[ -f package-lock.json ]]; then
+        printf '%s\n' 'npm install --package-lock-only --ignore-scripts --offline'
+      fi
+      ;;
+    cargo)
+      printf '%s\n' 'cargo update --workspace --offline || cargo update --workspace'
+      ;;
+    *) die "the ${name} preset is not available yet. Use citation, npm, cargo, typst or quarto-extension." ;;
     esac
   done
 }

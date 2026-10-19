@@ -72,3 +72,30 @@ assert_contains "${err}" "cannot read" "missing file message"
 status=0
 perl "${script}" bogus '{version}' "${file}" 2>/dev/null || status=$?
 assert_status 1 "${status}" "bad mode"
+
+# A section limits the matches to the lines under its header.
+cat >"${file}" <<'EOF'
+version = "0.0.1"
+
+[package]
+name = "demo"
+version = "1.4.2"
+authors = [
+  "a",
+]
+
+[dependencies]
+version = "9.9.9"
+
+[dependencies.other]
+version = "8.8.8"
+EOF
+section_find() {
+  perl "${script}" find '^version = "{version}"$' "${file}" "$1"
+}
+assert_eq "1.4.2" "$(section_find '[package]')" "section limits find"
+assert_eq "" "$(section_find '[absent]')" "missing section finds nothing"
+assert_eq $'0.0.1\n1.4.2\n9.9.9\n8.8.8' "$(find_matches '^version = "{version}"$')" "no section finds every line"
+count="$(VERSION=2.0.0 DATE=2026-10-15 MAJOR=2 perl "${script}" replace '^version = "{version}"$' "${file}" '[package]')"
+assert_eq 1 "${count}" "section replace count"
+assert_eq $'version = "0.0.1"\nversion = "2.0.0"\nversion = "9.9.9"\nversion = "8.8.8"' "$(grep '^version' "${file}")" "section replace leaves the rest"

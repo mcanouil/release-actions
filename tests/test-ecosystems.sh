@@ -32,11 +32,23 @@ assert_eq "" "$(ecosystem_source)" "no preset, no source"
 
 # Commands: none for the target-only presets.
 assert_eq "" "$(ecosystem_commands citation typst quarto-extension)" "no commands"
+assert_eq 'cargo update --workspace --offline || cargo update --workspace' "$(ecosystem_commands cargo)" "cargo command"
 
 # Targets.
 cd "${SCRATCH}"
 mkdir -p repo
 cd repo
+
+assert_eq $'- file: \'package.json\'\n  pattern: \'^  "version": "{version}",$\'' \
+  "$(ecosystem_targets npm)" "npm target"
+assert_eq $'- file: \'Cargo.toml\'\n  pattern: \'^version = "{version}"$\'\n  section: \'[package]\'' \
+  "$(ecosystem_targets cargo)" "cargo target"
+assert_eq "" "$(ecosystem_commands npm)" "npm without a lock file"
+printf '{}\n' >package-lock.json
+assert_eq 'npm install --package-lock-only --ignore-scripts --offline' "$(ecosystem_commands npm)" "npm with a lock file"
+rm package-lock.json
+run ecosystem_targets r
+refuses "the r preset is not available yet" "r preset"
 
 assert_eq $'- file: \'typst.toml\'\n  pattern: \'^version = "{version}"$\'' \
   "$(ecosystem_targets typst)" "typst target"
