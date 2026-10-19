@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 1.5.1 (2026-10-19)
+
 - fix: Stop `bump` when `ecosystems` names a preset twice, and name the preset when its lock file command fails. (#10)
 - fix: Read the `citation` quote style from the value only, accept a comment after a `[package]` header, and keep the spaces or tabs after `Version:` with the `r` preset. (#10)
 - fix: Stop the `npm` preset with a clear message on a one-line `package.json`. (#10)
