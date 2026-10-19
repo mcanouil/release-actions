@@ -86,7 +86,7 @@ fill_template() {
   local names="$1" what="$2" optional="${3:-}" file errors status=0 text allowed
   file="$(temp_dir)/fill-$$.err"
   text="$(perl "${LIB}/fill.pl" "${names}" "${optional}" 2>"${file}")" || status=$?
-  errors="$(cat "${file}")"
+  errors="$(cat "${file}" 2>/dev/null || true)"
   rm -f "${file}"
   allowed="$(perl -e 'print join ", ", map { "{$_}" } split /,/, $ARGV[0]' -- "${names}")"
   case "${status}" in

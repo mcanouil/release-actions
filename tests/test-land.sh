@@ -199,6 +199,15 @@ assert_status 0 "${STATUS}" "reused labels: ${ERR}"
 assert_contains "${LOG}" "--add-label Type: CI/CD :robot: --add-label ci --add-assignee mcanouil" "edit labels and assignees"
 
 fixture
+run_pr GH_PR_FAILS=1 ASSIGNEES=octocat
+refuses "could not create the pull request of release/v1.5.0. Assignees asked for: 'octocat'." "failed create names the assignees"
+
+fixture
+git push -q origin HEAD:refs/heads/release/v1.5.0
+run_pr GH_PR_FAILS=1 GH_STALE_PR='3 https://github.com/o/r/pull/3' ASSIGNEES=octocat
+refuses "could not update the pull request #3 of release/v1.5.0. Assignees asked for: 'octocat'." "failed edit names the assignees"
+
+fixture
 run_land LABELS=ci ASSIGNEES=mcanouil
 assert_status 0 "${STATUS}" "push with labels: ${ERR}"
 assert_contains "${ERR}" "labels and assignees only apply to a pull request" "push notice"

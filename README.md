@@ -256,6 +256,7 @@ The rules for presets:
   A target of yours with `source: true` wins over the presets.
   With `version-source: tag`, the presets only write the version.
 - `citation` keeps the form of the file: a quoted value stays quoted, and a plain value stays plain.
+  Its `version` and `date-released` lines cannot end with a comment.
 - `quarto-extension` needs exactly one `_extensions/*/_extension.yml`, one level deep.
   Vendored extensions at `_extensions/<owner>/<name>/` never match.
 - `npm` needs the top-level `"version"` on a line of its own, as npm writes `package.json`.

@@ -59,6 +59,7 @@ refuses() {
 # For pull requests: GH_STALE_PR is the open pull request of the head branch,
 # as "<number> <url>",
 # GH_LABELS a file of label names, GH_LABELS_DOWN fails gh label list,
+# GH_PR_FAILS fails gh pr create and gh pr edit,
 # GH_MERGE_FAILS fails gh pr merge, and each
 # gh pr view prints the next line of the file GH_PR_SCRIPT, repeating the last
 # one. A line "!fail" fails that call, and {branch-sha} stands for the commit
@@ -148,6 +149,10 @@ case "$*" in
   [[ -z "${GH_STALE_PR:-}" ]] || echo "${GH_STALE_PR}"
   ;;
 "pr create"* | "pr edit"*)
+  if [[ -n "${GH_PR_FAILS:-}" ]]; then
+    echo "could not assign user: 'octocat' not found" >&2
+    exit 1
+  fi
   case "$1 $2" in
   "pr create")
     echo "Creating pull request"
