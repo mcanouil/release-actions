@@ -52,7 +52,9 @@ refuses() {
 # GH_DEFAULT_BRANCH (default main). The tags in GH_TAGS (one
 # per line) exist, GH_RELEASE_EXISTS adds a release, GH_DOWN fails every call
 # as a token or network error would, GH_RELEASE_DOWN fails only the release
-# lookup, and GH_LOG, when set, records each call. Every App bot has the user
+# lookup, GH_RELEASE_DRAFT=true makes that release a draft, GH_TAG_COMMIT is the
+# commit that every existing tag points at, GH_RESOLVE_FROM resolves to
+# GH_RESOLVE_TO as a commit (any other ref resolves to itself), and GH_LOG, when set, records each call. Every App bot has the user
 # id 123, and every token belongs to octo, with the user id 456.
 # For pull requests: GH_STALE_PR is the open pull request of the head branch,
 # as "<number> <url>",
@@ -100,6 +102,31 @@ case "$*" in
   ;;
 "api /user "*)
   echo "octo 456"
+  ;;
+"api repos/o/r/commits/refs/tags/"*)
+  args="$*"
+  tag="${args#api repos/o/r/commits/refs/tags/}"
+  tag="${tag%% *}"
+  grep -qxF "${tag}" "${GH_TAGS}" || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+  echo "${GH_TAG_COMMIT}"
+  ;;
+"api repos/o/r/commits/"*)
+  args="$*"
+  ref="${args#api repos/o/r/commits/}"
+  ref="${ref%% *}"
+  if [[ -n "${GH_RESOLVE_FROM:-}" && "${ref}" == "${GH_RESOLVE_FROM}" ]]; then
+    echo "${GH_RESOLVE_TO}"
+  else
+    echo "${ref}"
+  fi
+  ;;
+"release view"*"isDraft"*)
+  if [[ -n "${GH_RELEASE_EXISTS:-}" ]]; then
+    echo "${GH_RELEASE_DRAFT:-false}"
+    exit 0
+  fi
+  echo "release not found" >&2
+  exit 1
   ;;
 "release view"*"--json"*)
   printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'

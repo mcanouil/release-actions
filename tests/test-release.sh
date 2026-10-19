@@ -80,6 +80,43 @@ refuses_release "tag v1.5.0 already exists" "existing tag"
 run_release TAG_PREFIX=v GH_RELEASE_EXISTS=1
 refuses_release "a release named v1.5.0 already exists" "existing release"
 
+run_release TAG_PREFIX=v EXISTING=sometimes
+refuses_release "existing is 'sometimes'. Use fail, keep." "bad existing"
+
+# existing: keep passes only for a published release whose tag is on the target.
+TAGS=$'v1.5.0\n' run_release TAG_PREFIX=v EXISTING=keep GH_RELEASE_EXISTS=1 GH_TAG_COMMIT="${sha}" ROLLING=true
+assert_status 0 "${STATUS}" "keep matching: ${ERR}"
+if grep -Eq '^(release create|release upload|api --method)' "${GH_LOG}"; then
+  printf '  keep matching: the release or a tag changed\n' >&2
+  exit 1
+fi
+assert_contains "${ERR}" "release v1.5.0 already exists" "keep matching message"
+assert_eq "v1.5.0" "$(output_value tag "${OUT}")" "keep tag output"
+assert_eq "https://github.com/o/r/releases/tag/v1.5.0" "$(output_value url "${OUT}")" "keep url output"
+assert_eq "42" "$(output_value release-id "${OUT}")" "keep release-id output"
+
+TAGS=$'v1.5.0\n' run_release TAG_PREFIX=v EXISTING=keep GH_RELEASE_EXISTS=1 GH_TAG_COMMIT=def456 GH_RESOLVE_FROM=main GH_RESOLVE_TO=abc123 TARGET=main
+refuses_release "tag v1.5.0 is on def456, but target is abc123" "keep other commit"
+
+TAGS=$'v1.5.0\n' run_release TAG_PREFIX=v EXISTING=keep GH_RELEASE_EXISTS=1 GH_TAG_COMMIT="${sha}" GH_RESOLVE_FROM=0123456 GH_RESOLVE_TO="${sha}" TARGET=0123456
+assert_status 0 "${STATUS}" "keep short sha: ${ERR}"
+
+TAGS=$'v1.5.0\n' run_release TAG_PREFIX=v EXISTING=keep GH_RELEASE_EXISTS=1 GH_RELEASE_DRAFT=true GH_TAG_COMMIT="${sha}"
+refuses_release "release v1.5.0 is a draft. Publish or delete it" "keep draft"
+
+run_release TAG_PREFIX=v EXISTING=keep GH_RELEASE_EXISTS=1
+refuses_release "release v1.5.0 exists, but tag v1.5.0 does not" "keep without tag"
+
+run_release TAG_PREFIX=v EXISTING=keep
+assert_status 0 "${STATUS}" "keep with nothing there creates: ${ERR}"
+assert_contains "${LOG}" "release create v1.5.0" "keep with nothing there"
+
+TAGS=$'v1.5.0\n' run_release TAG_PREFIX=v EXISTING=keep
+refuses_release "tag v1.5.0 already exists" "keep with a tag and no release"
+
+TAGS=$'v1.5.0\n' run_release TAG_PREFIX=v EXISTING=fail GH_RELEASE_EXISTS=1 GH_TAG_COMMIT="${sha}"
+refuses_release "tag v1.5.0 already exists" "explicit fail"
+
 run_release TAG_PREFIX=v GH_DOWN=1
 refuses_release "could not check for the tag v1.5.0" "unreachable API"
 
