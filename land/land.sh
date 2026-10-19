@@ -68,13 +68,13 @@ if [[ "${MODE}" == "pull-request" ]]; then
   fi
 fi
 
-# Splits a comma-separated list into SPLIT. Items are trimmed and empty ones
+# Splits a list separated by commas or newlines into SPLIT. Items are trimmed and empty ones
 # dropped; a name keeps its inner spaces.
 split_list() {
   local -a parts=()
   local item
   SPLIT=()
-  IFS=',' read -r -a parts <<<"$1" || true
+  IFS=',' read -r -a parts <<<"${1//$'\n'/,}" || true
   for item in ${parts[@]+"${parts[@]}"}; do
     item="${item#"${item%%[![:space:]]*}"}"
     item="${item%"${item##*[![:space:]]}"}"

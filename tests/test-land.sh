@@ -175,6 +175,12 @@ assert_status 0 "${STATUS}" "labels and assignees: ${ERR}"
 assert_contains "${LOG}" "--label Type: CI/CD :robot: --label ci --assignee mcanouil --assignee octocat" "create labels and assignees"
 
 fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr LABELS=$'Type: CI/CD :robot:\nci\n' ASSIGNEES=$'mcanouil\noctocat'
+assert_status 0 "${STATUS}" "multi-line labels: ${ERR}"
+assert_contains "${LOG}" "--label Type: CI/CD :robot: --label ci --assignee mcanouil --assignee octocat" "multi-line labels and assignees"
+
+fixture
 git push -q origin HEAD:refs/heads/release/v1.5.0
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
 run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3' LABELS='Type: CI/CD :robot:, ci' ASSIGNEES=mcanouil
