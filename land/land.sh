@@ -82,12 +82,11 @@ split_list() {
   done
 }
 
-# Says which labels and assignees a failed pull request call asked for.
-label_hint() {
-  local hint=""
-  [[ ${#label_names[@]} -eq 0 ]] || hint=" Labels asked for: $(join_list "${label_names[@]}"). The repository must have each one."
-  [[ ${#assignee_names[@]} -eq 0 ]] || hint="${hint} Assignees asked for: $(join_list "${assignee_names[@]}"). Each must be able to take the pull request."
-  printf '%s' "${hint}"
+# Says which assignees a failed pull request call asked for. The labels are
+# checked before the push.
+assignee_hint() {
+  [[ ${#assignee_names[@]} -eq 0 ]] ||
+    printf ' Assignees asked for: %s. Each must be able to take the pull request.' "$(join_list "${assignee_names[@]}")"
 }
 
 join_list() {
@@ -98,12 +97,10 @@ join_list() {
   printf '%s' "${out}"
 }
 
-label_names=()
-assignee_names=()
 split_list "${LABELS}"
-for item in ${SPLIT[@]+"${SPLIT[@]}"}; do label_names+=("${item}"); done
+label_names=(${SPLIT[@]+"${SPLIT[@]}"})
 split_list "${ASSIGNEES}"
-for item in ${SPLIT[@]+"${SPLIT[@]}"}; do assignee_names+=("${item}"); done
+assignee_names=(${SPLIT[@]+"${SPLIT[@]}"})
 if [[ "${MODE}" == "push" && (${#label_names[@]} -gt 0 || ${#assignee_names[@]} -gt 0) ]]; then
   warn "labels and assignees only apply to a pull request, and mode is push: ignored."
 fi
@@ -162,7 +159,7 @@ while IFS= read -r file; do
 done <<<"${FILES}"
 if [[ ${#files[@]} -eq 0 ]]; then
   [[ "${ALLOW_UNCHANGED}" == "true" ]] || die "files is empty. Pass the files output of the bump action."
-  printf 'files is empty: nothing to land.\n' >&2
+  printf 'files is empty: nothing to land.\n'
   set_output changed false
   set_output sha ""
   exit 0
@@ -205,6 +202,24 @@ if git diff --cached --quiet -- "${files[@]}"; then
     die "no change in ${files[*]} against HEAD. The bump may already be on ${BRANCH}: check it before you dispatch the workflow again."
   fi
   die "no change in ${files[*]} against HEAD."
+fi
+
+# The labels of the repository, read before the push, so that a missing label
+# stops the step before anything changes on origin. Without labels to check, a
+# failed read only drops the default label.
+repo_labels=""
+if [[ "${MODE}" == "pull-request" ]]; then
+  if ! repo_labels="$(gh label list --repo "${REPOSITORY}" --limit 1000 --json name --jq '.[].name' 2>&1)"; then
+    [[ ${#label_names[@]} -eq 0 ]] ||
+      die "could not list the labels of ${REPOSITORY}: ${repo_labels}. Check that the token can read ${REPOSITORY}."
+    repo_labels=""
+  fi
+  missing=()
+  for name in ${label_names[@]+"${label_names[@]}"}; do
+    grep -qxF -- "${name}" <<<"${repo_labels}" || missing+=("${name}")
+  done
+  [[ ${#missing[@]} -eq 0 ]] ||
+    die "labels lists $(join_list "${missing[@]}"), which ${REPOSITORY} does not have. Create them in the repository, or remove them from labels."
 fi
 
 land_push() {
@@ -256,15 +271,16 @@ open_pull_request() {
     done
     gh pr edit "${open%% *}" --repo "${REPOSITORY}" --title "${pr_message}" --body "${BODY}" \
       ${edit_args[@]+"${edit_args[@]}"} >&2 ||
-      die "could not update the pull request #${open%% *} of ${head}.$(label_hint)"
+      die "could not update the pull request #${open%% *} of ${head}.$(assignee_hint)"
     printf '%s\n' "${open#* }"
     return 0
   fi
-  if gh label list --repo "${REPOSITORY}" --limit 1000 --json name --jq '.[].name' | grep -qxF "${LABEL}"; then
+  if grep -qxF -- "${LABEL}" <<<"${repo_labels}"; then
     labels=(--label "${LABEL}")
   fi
+  # A caller that lists the default label gets it once.
   for name in ${label_names[@]+"${label_names[@]}"}; do
-    labels+=(--label "${name}")
+    [[ "${name}" == "${LABEL}" ]] || labels+=(--label "${name}")
   done
   for name in ${assignee_names[@]+"${assignee_names[@]}"}; do
     assignees+=(--assignee "${name}")
@@ -273,7 +289,7 @@ open_pull_request() {
   url="$(gh pr create --repo "${REPOSITORY}" --base "${BRANCH}" --head "${head}" \
     --title "${pr_message}" --body "${BODY}" \
     ${labels[@]+"${labels[@]}"} ${assignees[@]+"${assignees[@]}"})" ||
-    die "could not create the pull request of ${head}.$(label_hint)"
+    die "could not create the pull request of ${head}.$(assignee_hint)"
   printf '%s\n' "${url}" | tail -n 1
 }
 

@@ -207,13 +207,19 @@ assert_status 0 "${STATUS}" "r preset in a list: ${ERR}"
 assert_contains "${BODY}" "- Add the thing." "r preset in a list"
 run_notes ECOSYSTEMS=r VERSION=2.1.0 CHANGELOG=docs/NEWS.md
 refuses "docs/NEWS.md does not exist" "r preset with a named changelog"
+assert_contains "${ERR}" "Pass the notes-file output of the bump action, or set changelog" "r preset missing changelog hint"
 run_notes ECOSYSTEMS=r VERSION=9.9.9
 refuses "NEWS.md has no heading '# NACHO 9.9.9'" "r preset without the heading"
+assert_contains "${ERR}" "Check that version is the version that bump wrote" "r preset without the heading hint"
+printf '# NACHO 2.1.0\n\n- A.\n\n# NACHO 2.1.0\n\n- B.\n' >twice.md
+run_notes ECOSYSTEMS=r VERSION=2.1.0 CHANGELOG=twice.md
+refuses "twice.md has more than one heading '# NACHO 2.1.0'. Keep one" "r preset with a repeated heading"
+rm twice.md
 run_notes ECOSYSTEMS=r VERSION=2.1.0 NOTES_FILE="${notes}"
 assert_eq $'## Changelog\n\n- feat: Next thing. (#7)' "${BODY}" "notes-file wins over the r preset"
 rm DESCRIPTION
 run_notes ECOSYSTEMS=r VERSION=2.1.0
-refuses "DESCRIPTION does not exist" "r preset without DESCRIPTION"
+refuses "DESCRIPTION does not exist. Run the step at the root of the R package." "r preset without DESCRIPTION"
 printf 'Package: NACHO\n' >DESCRIPTION
 rm NEWS.md
 run_notes ECOSYSTEMS=r VERSION=2.1.0

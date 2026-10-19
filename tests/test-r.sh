@@ -69,6 +69,9 @@ assert_eq "- fix: Old thing. (#60)" "$(r_news_section "${news}" NACHO 2.0.8)" "l
 run r_news_section "${news}" NACHO 9.9.9
 assert_status 2 "${STATUS}" "missing section"
 r_news_pending "${news}" NACHO || assert_status 0 1 "development heading after blank lines"
+printf '# NACHO (development version)  \r\n\r\n- fix: X.  \r\n  and more.\r\n\r\n# NACHO 2.0.8\r\n' >"${SCRATCH}/crlf.md"
+r_news_pending "${SCRATCH}/crlf.md" NACHO || assert_status 0 1 "development heading with trailing spaces and CRLF"
+assert_eq "$(printf -- '- fix: X.  \n  and more.\n' | od -c)" "$(r_news_section "${SCRATCH}/crlf.md" NACHO "(development version)" | od -c)" "section keeps hard breaks"
 
 r_roll_news "${news}" NACHO 2.1.0
 assert_eq "" "$(sed -n 1p "${news}")" "roll keeps the leading blank line"
@@ -192,6 +195,12 @@ assert_eq 'version: "2.0.8"' "$(sed -n 3p CITATION.cff)" "r alone leaves CITATIO
 fixture
 run_bump BUMP=2.1.0 ECOSYSTEMS=r
 assert_eq "2.1.0" "$(output_value version "${OUT}")" "explicit with r"
+fixture
+sed 's/^Version: /Version:\t/' DESCRIPTION >DESCRIPTION.new
+mv DESCRIPTION.new DESCRIPTION
+run_bump BUMP=minor ECOSYSTEMS=r
+assert_status 0 "${STATUS}" "tab after Version: ${ERR}"
+assert_eq $'Version:\t2.1.0' "$(sed -n 4p DESCRIPTION)" "tab after Version: kept"
 
 # The tag check: a four-part version needs no tag, a three-part one does.
 fixture pkg 2.1.0.9000

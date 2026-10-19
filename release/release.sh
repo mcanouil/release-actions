@@ -78,7 +78,8 @@ if [[ "${EXISTING}" == "keep" ]]; then
   if output="$(gh release view "${tag}" --repo "${REPOSITORY}" --json isDraft --jq .isDraft 2>&1)"; then
     [[ "${output}" != "true" ]] ||
       die "release ${tag} is a draft. Publish or delete it, then run again."
-    gh_error="$(mktemp)"
+    gh_error="$(mktemp "$(temp_dir)/release-gh.XXXXXX")"
+    trap 'rm -f "${gh_error}"' EXIT
     if ! output="$(gh api "repos/${REPOSITORY}/git/ref/tags/${tag}" --silent 2>&1)"; then
       if [[ "${output}" == *"HTTP 404"* ]]; then
         die "release ${tag} exists, but tag ${tag} does not. Delete the release, then run again."
@@ -89,7 +90,6 @@ if [[ "${EXISTING}" == "keep" ]]; then
       die "could not read the commit of the tag ${tag}: $(cat "${gh_error}"). Check that the token can read ${REPOSITORY}."
     target_commit="$(gh api "repos/${REPOSITORY}/commits/${TARGET}" --jq .sha 2>"${gh_error}")" ||
       die "could not resolve target '${TARGET}': $(cat "${gh_error}"). Pass a commit of ${REPOSITORY}."
-    rm -f "${gh_error}"
     [[ "${tag_commit}" == "${target_commit}" ]] ||
       die "tag ${tag} is on ${tag_commit}, but target is ${target_commit}. Delete the release and the tag, or pass the commit that the tag is on."
     printf '%s: release %s already exists on %s. Nothing changed.\n' "${SCRIPT_NAME}" "${tag}" "${target_commit}" >&2

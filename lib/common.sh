@@ -83,14 +83,16 @@ release_date() {
 # names the template in the error messages, and OPTIONAL lists the names that
 # can be empty. Needs LIB.
 fill_template() {
-  local names="$1" what="$2" optional="${3:-}" errors status=0 text allowed
-  errors="$(temp_dir)/fill-$$.err"
-  text="$(perl "${LIB}/fill.pl" "${names}" "${optional}" 2>"${errors}")" || status=$?
+  local names="$1" what="$2" optional="${3:-}" file errors status=0 text allowed
+  file="$(temp_dir)/fill-$$.err"
+  text="$(perl "${LIB}/fill.pl" "${names}" "${optional}" 2>"${file}")" || status=$?
+  errors="$(cat "${file}" 2>/dev/null || true)"
+  rm -f "${file}"
   allowed="$(perl -e 'print join ", ", map { "{$_}" } split /,/, $ARGV[0]' -- "${names}")"
   case "${status}" in
   0) printf '%s\n' "${text}" ;;
-  2) die "${what} has unknown placeholders: $(cat "${errors}"). Use ${allowed}." ;;
-  3) die "${what} uses $(cat "${errors}"), but it has no value. Set the matching input." ;;
+  2) die "${what} has unknown placeholders: ${errors}. Use ${allowed}." ;;
+  3) die "${what} uses ${errors}, but it has no value. Set the matching input." ;;
   *) die "could not fill ${what}." ;;
   esac
 }

@@ -5,18 +5,21 @@
 ECOSYSTEM_LIST="citation, npm, cargo, typst, quarto-extension, r"
 
 # Prints each name of the comma-separated LIST on a line of its own. Spaces,
-# newlines and empty items are ignored. Stops on an unknown name.
+# newlines and empty items are ignored. Stops on an unknown or repeated name.
 ecosystem_names() {
-  local list="${1//$'\n'/,}" item items
+  local list="${1//$'\n'/,}" item items seen=","
   IFS=',' read -r -a items <<<"${list}"
   for item in ${items[@]+"${items[@]}"}; do
     item="${item#"${item%%[![:space:]]*}"}"
     item="${item%"${item##*[![:space:]]}"}"
     [[ -n "${item}" ]] || continue
     case "${item}" in
-    citation | npm | cargo | typst | quarto-extension | r) printf '%s\n' "${item}" ;;
+    citation | npm | cargo | typst | quarto-extension | r) ;;
     *) die "unknown ecosystem '${item}'. Use ${ECOSYSTEM_LIST}." ;;
     esac
+    [[ "${seen}" != *",${item},"* ]] || die "ecosystems lists ${item} twice. Keep one."
+    seen="${seen}${item},"
+    printf '%s\n' "${item}"
   done
 }
 
@@ -30,15 +33,16 @@ ecosystem_item() {
   fi
 }
 
-# Prints the quote character around the value of the first KEY line of FILE,
-# or nothing when the value is plain or FILE is missing.
+# Prints the quote character that opens the value of the first KEY line of
+# FILE, or nothing when the value is plain or FILE is missing.
 ecosystem_quote() {
-  local line
+  local value
   [[ -f "$2" ]] || return 0
-  line="$(grep -m 1 "^$1:" "$2" || true)"
-  case "${line#"$1":}" in
-  *\"*) printf '"' ;;
-  *\'*) printf "'" ;;
+  value="$(grep -m 1 "^$1:" "$2" || true)"
+  value="${value#"$1":}"
+  case "${value#"${value%%[![:space:]]*}"}" in
+  \"*) printf '"' ;;
+  \'*) printf "'" ;;
   esac
 }
 
@@ -66,9 +70,24 @@ ecosystem_json_pattern() {
         line = indent "|" sep "|" comma
       }
       END { if (found) printf "%s", line }' "$1")"
+    [[ -n "${form}" ]] ||
+      die "$1 has \"version\" on a line with other keys, and the npm preset writes a \"version\" line of its own. Put one key on each line, as npm does, or list the target in targets instead of the npm preset."
   fi
   local indent="${form%%|*}" rest="${form#*|}"
   printf '^%s"version"%s"{version}"%s$' "${indent}" "${rest%%|*}" "${rest#*|}"
+}
+
+# Prints the pattern of the Version line of the DESCRIPTION file FILE, with
+# the spaces or tabs that the file puts after "Version:". A missing file or
+# line gets one space, for the target checks to report.
+ecosystem_r_pattern() {
+  local gap=" " line
+  if [[ -f "$1" ]]; then
+    line="$(grep -m 1 '^Version:[[:blank:]]' "$1" || true)"
+    line="${line#Version:}"
+    [[ -z "${line}" ]] || gap="${line%%[![:blank:]]*}"
+  fi
+  printf '^Version:%s{version}$' "${gap}"
 }
 
 # Prints the YAML target items of each preset in NAMES, in order. The first
@@ -106,7 +125,7 @@ ecosystem_targets() {
       ecosystem_item '_extensions/*/_extension.yml' '^version: {version}$'
       ;;
     r)
-      ecosystem_item DESCRIPTION '^Version: {version}$'
+      ecosystem_item DESCRIPTION "$(ecosystem_r_pattern DESCRIPTION)"
       ;;
     *) die "unknown ecosystem '${name}'. Use ${ECOSYSTEM_LIST}." ;;
     esac
@@ -123,7 +142,7 @@ ecosystem_commands() {
     npm)
       # Refreshes the root entry of the lock file without a network call.
       if [[ -f package-lock.json ]]; then
-        printf '%s\n' 'npm install --package-lock-only --ignore-scripts --offline || npm install --package-lock-only --ignore-scripts'
+        printf '%s\n' 'npm install --package-lock-only --ignore-scripts --no-audit --no-fund --offline || npm install --package-lock-only --ignore-scripts --no-audit --no-fund'
       fi
       ;;
     cargo)

@@ -100,16 +100,22 @@ if [[ ${#ecosystems[@]} -gt 0 ]]; then
 fi
 preset_count=${#t_file[@]}
 
-# The commands of the presets, one per line, run before after-bump.
-preset_commands=""
-if [[ ${#ecosystems[@]} -gt 0 ]]; then
-  preset_commands="$(ecosystem_commands "${ecosystems[@]}")"
-fi
-if [[ -n "${AFTER_BUMP}" || -n "${preset_commands}" ]]; then
+# The commands of the presets, which run before after-bump, and the preset
+# that each one comes from.
+c_command=()
+c_preset=()
+for name in ${ecosystems[@]+"${ecosystems[@]}"}; do
+  while IFS= read -r command; do
+    [[ -n "${command}" ]] || continue
+    c_command+=("${command}")
+    c_preset+=("${name}")
+  done <<<"$(ecosystem_commands "${name}")"
+done
+if [[ -n "${AFTER_BUMP}" || ${#c_command[@]} -gt 0 ]]; then
   require_tools git
-  while IFS=' ' read -r tool _; do
-    [[ -z "${tool}" ]] || require_tools "${tool}"
-  done <<<"${preset_commands}"
+  for command in ${c_command[@]+"${c_command[@]}"}; do
+    require_tools "${command%% *}"
+  done
   git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
     die "after-bump needs a git checkout with a commit, to list the files that it changes, and so do the commands of the ecosystems presets. Run bump after actions/checkout."
 fi
@@ -387,13 +393,12 @@ tree_state() {
 # Only what after-bump changes joins files: earlier steps of the job can leave
 # other changes in the tree.
 changed=""
-if [[ -n "${AFTER_BUMP}" || -n "${preset_commands}" ]]; then
+if [[ -n "${AFTER_BUMP}" || ${#c_command[@]} -gt 0 ]]; then
   before="$(tree_state)" || die "could not read the state of the tree before after-bump."
-  while IFS= read -r command; do
-    [[ -n "${command}" ]] || continue
-    bash -euo pipefail -c "${command}" ||
-      die "the command of an ecosystems preset failed: ${command}. The version is written but nothing is committed. Check the lock file and the network access of the runner, or remove the preset from ecosystems, then dispatch again."
-  done <<<"${preset_commands}"
+  for ((i = 0; i < ${#c_command[@]}; i++)); do
+    bash -euo pipefail -c "${c_command[i]}" ||
+      die "the command of the ${c_preset[i]} preset failed: ${c_command[i]}. The version is written but nothing is committed. Check the lock file and the network access of the runner, or remove ${c_preset[i]} from ecosystems, then dispatch again."
+  done
   if [[ -n "${AFTER_BUMP}" ]]; then
     bash -euo pipefail -c "${AFTER_BUMP}" ||
       die "after-bump failed: ${AFTER_BUMP}. The version is written but nothing is committed; fix the command and dispatch again."

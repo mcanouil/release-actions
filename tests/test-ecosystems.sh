@@ -23,6 +23,8 @@ assert_eq "" "$(ecosystem_names " , ")" "only separators"
 run ecosystem_names "typst, foo"
 refuses "unknown ecosystem 'foo'" "unknown name"
 assert_contains "${ERR}" "citation, npm, cargo, typst, quarto-extension, r" "unknown name lists the names"
+run ecosystem_names "citation, typst,citation"
+refuses "ecosystems lists citation twice. Keep one." "repeated name"
 
 # Source.
 assert_eq "citation" "$(ecosystem_source citation)" "citation alone is the source"
@@ -53,11 +55,17 @@ assert_eq $'- file: \'Cargo.toml\'\n  pattern: \'^version = "{version}"$\'\n  se
   "$(ecosystem_targets cargo)" "cargo target"
 assert_eq "" "$(ecosystem_commands npm)" "npm without a lock file"
 printf '{}\n' >package-lock.json
-assert_eq 'npm install --package-lock-only --ignore-scripts --offline || npm install --package-lock-only --ignore-scripts' "$(ecosystem_commands npm)" "npm with a lock file"
+assert_eq 'npm install --package-lock-only --ignore-scripts --no-audit --no-fund --offline || npm install --package-lock-only --ignore-scripts --no-audit --no-fund' "$(ecosystem_commands npm)" "npm with a lock file"
 rm package-lock.json
 assert_eq $'- file: \'DESCRIPTION\'\n  pattern: \'^Version: {version}$\'' \
   "$(ecosystem_targets r)" "r target"
 assert_eq "" "$(ecosystem_commands r)" "r has no command"
+printf 'Package: demo\nVersion:\t1.2.3\n' >DESCRIPTION
+assert_eq $'- file: \'DESCRIPTION\'\n  pattern: \'^Version:\t{version}$\'' \
+  "$(ecosystem_targets r)" "r target keeps a tab"
+printf 'Package: demo\nVersion:   1.2.3\n' >DESCRIPTION
+assert_eq "^Version:   {version}\$" "$(ecosystem_targets r | yq -r '.[0].pattern')" "r target keeps several spaces"
+rm DESCRIPTION
 
 assert_eq $'- file: \'typst.toml\'\n  pattern: \'^version = "{version}"$\'' \
   "$(ecosystem_targets typst)" "typst target"
@@ -72,6 +80,9 @@ printf "version: '1.4.2'\r\ndate-released: \"2026-01-02\"\r\n" >CITATION.cff
 assert_eq $'- file: \'CITATION.cff\'\n  pattern: \'^version: \'\'{version}\'\'$\'\n- file: \'CITATION.cff\'\n  pattern: \'^date-released: "{date}"$\'' \
   "$(ecosystem_targets citation)" "single quotes, CRLF and mixed forms"
 assert_eq "^version: '{version}'$" "$(ecosystem_targets citation | yq -r '.[0].pattern')" "single quotes survive YAML"
+printf '%s\n' 'version: 1.4.2 # "stable"' "date-released: 2026-01-02 # it's today" >CITATION.cff
+assert_eq $'- file: \'CITATION.cff\'\n  pattern: \'^version: {version}$\'\n- file: \'CITATION.cff\'\n  pattern: \'^date-released: {date}$\'' \
+  "$(ecosystem_targets citation)" "quotes in a trailing comment"
 rm CITATION.cff
 assert_eq $'- file: \'CITATION.cff\'\n  pattern: \'^version: {version}$\'\n- file: \'CITATION.cff\'\n  pattern: \'^date-released: {date}$\'' \
   "$(ecosystem_targets citation)" "missing CITATION.cff left to the target checks"
@@ -107,6 +118,10 @@ printf '{\n  "version": "1.0.0-beta.1",\n  "x": {\n      "version": "2.0.0"\n  }
 assert_eq $'- file: \'package.json\'\n  pattern: \'^  "version": "{version}",$\'' "$(ecosystem_targets npm)" "shallowest indentation wins over a shorter match"
 printf '{"x":{\n "version":"2.0.0"},\n"version":"1.0.0"\n}\n' >package.json
 assert_eq $'- file: \'package.json\'\n  pattern: \'^"version":"{version}"$\'' "$(ecosystem_targets npm)" "compact form kept"
+printf '{"name":"demo","version":"1.0.0"}\n' >package.json
+run ecosystem_targets npm
+refuses 'package.json has "version" on a line with other keys' "one-line package.json"
+assert_contains "${ERR}" "line of its own" "one-line package.json hint"
 printf '{\n  "version" : "1.0.0",\n}\n' >package.json
 assert_eq $'- file: \'package.json\'\n  pattern: \'^  "version" : "{version}",$\'' "$(ecosystem_targets npm)" "spaced colon kept"
 rm package.json

@@ -32,3 +32,14 @@ for bad in 2026-02-29 2026-02-30 2026-13-01 2026-04-31; do
   err="$( (release_date "${bad}") 2>&1)" || true
   assert_contains "${err}" "not a calendar date" "calendar check ${bad}"
 done
+
+# A temporary directory that cannot take the error file still names the template.
+LIB="${ROOT}/lib"
+err="$( (printf '{version}' | RUNNER_TEMP="${SCRATCH}/missing" FILL_version=1.0.0 fill_template version "the header") 2>&1)" || true
+assert_contains "${err}" "could not fill the header" "fill without a temporary directory"
+case "${err}" in
+*"cat:"*)
+  echo "  fill without a temporary directory: [${err}] shows a cat error" >&2
+  exit 1
+  ;;
+esac
