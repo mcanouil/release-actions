@@ -36,8 +36,8 @@ r_next_version() {
     if [[ "${bump}" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
       die "bump is '${bump}', which has four parts. The r preset keeps four parts for development versions; use dev, or a version such as 1.2.3."
     fi
-    if [[ ! "${bump}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-      die "bump is '${bump}'. Use patch, minor, major, dev, or a version such as 1.2.3."
+    if [[ ! "${bump}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      die "bump is '${bump}'. Use patch, minor, major, dev, or a version of three parts, such as X.Y.Z."
     fi
     if [[ "${bump}" == "${current}" ]]; then
       die "bump is '${bump}', which is already the current version."

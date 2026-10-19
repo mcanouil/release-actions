@@ -228,7 +228,7 @@ Spaces and empty items are ignored, and an unknown name stops the step.
 | Preset | Writes | Command that it runs |
 | --- | --- | --- |
 | `citation` | `version` and `date-released` in `CITATION.cff` | None. |
-| `npm` | `"version"` in `package.json`, at the indentation of its top-level key (spaces or tabs) | `npm install --package-lock-only --ignore-scripts --offline`, only when `package-lock.json` exists. |
+| `npm` | `"version"` in `package.json`, at the indentation of its top-level key (spaces or tabs) | `npm install --package-lock-only --ignore-scripts --offline`, and online if that fails, only when `package-lock.json` exists. |
 | `cargo` | `version` under `[package]` in `Cargo.toml` | `cargo update --workspace --offline`, and online if that fails. |
 | `typst` | `version` in `typst.toml` | None. |
 | `quarto-extension` | `version` in `_extensions/*/_extension.yml` | None. |

@@ -160,7 +160,13 @@ while IFS= read -r file; do
     files+=("${file}")
   fi
 done <<<"${FILES}"
-[[ ${#files[@]} -gt 0 ]] || die "files is empty. Pass the files output of the bump action."
+if [[ ${#files[@]} -eq 0 ]]; then
+  [[ "${ALLOW_UNCHANGED}" == "true" ]] || die "files is empty. Pass the files output of the bump action."
+  printf 'files is empty: nothing to land.\n' >&2
+  set_output changed false
+  set_output sha ""
+  exit 0
+fi
 
 git symbolic-ref -q HEAD >/dev/null ||
   die "HEAD is not on a branch. Check out ${BRANCH} before land."

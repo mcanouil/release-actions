@@ -46,7 +46,7 @@ assert_eq $'- file: \'Cargo.toml\'\n  pattern: \'^version = "{version}"$\'\n  se
   "$(ecosystem_targets cargo)" "cargo target"
 assert_eq "" "$(ecosystem_commands npm)" "npm without a lock file"
 printf '{}\n' >package-lock.json
-assert_eq 'npm install --package-lock-only --ignore-scripts --offline' "$(ecosystem_commands npm)" "npm with a lock file"
+assert_eq 'npm install --package-lock-only --ignore-scripts --offline || npm install --package-lock-only --ignore-scripts' "$(ecosystem_commands npm)" "npm with a lock file"
 rm package-lock.json
 assert_eq $'- file: \'DESCRIPTION\'\n  pattern: \'^Version: {version}$\'' \
   "$(ecosystem_targets r)" "r target"

@@ -33,11 +33,11 @@ inputs:
     required: false
     default: ""
   labels:
-    description: "Labels of the pull request, comma-separated. A label the repository lacks fails the step. Ignored with a notice in push mode."
+    description: "Labels of the pull request, comma-separated or one per line. A label the repository lacks fails the step. Ignored with a notice in push mode."
     required: false
     default: ""
   assignees:
-    description: "Assignees of the pull request, comma-separated. Ignored with a notice in push mode."
+    description: "Assignees of the pull request, comma-separated or one per line. Ignored with a notice in push mode."
     required: false
     default: ""
   merge:

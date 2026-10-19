@@ -30,7 +30,8 @@ next 2.0.7 minor 2.1.0
 next 2.0.08 patch 2.0.9
 next 1.2.3.0 patch 1.2.4
 next 2.0.8.9000 2.1.0 2.1.0
-next 2.0.8.9000 3.0 3.0
+run r_next_version 2.0.8.9000 3.0
+refuses "X.Y.Z" "two-part explicit version"
 run r_next_version 2.0.8.9000 calver
 refuses "calver" "calver"
 run r_next_version 2.0.8 2.1.0.1

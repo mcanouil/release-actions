@@ -108,7 +108,7 @@ ecosystem_commands() {
     npm)
       # Refreshes the root entry of the lock file without a network call.
       if [[ -f package-lock.json ]]; then
-        printf '%s\n' 'npm install --package-lock-only --ignore-scripts --offline'
+        printf '%s\n' 'npm install --package-lock-only --ignore-scripts --offline || npm install --package-lock-only --ignore-scripts'
       fi
       ;;
     cargo)

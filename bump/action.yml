@@ -6,7 +6,7 @@ inputs:
     description: "patch, minor, major, calver, dev, or an explicit version such as 1.2.3. dev needs the r preset."
     required: true
   ecosystems:
-    description: "Comma-separated presets whose targets come before targets: citation, npm, cargo, typst, quarto-extension or r. r also switches to R package versions and NEWS.md."
+    description: "Presets, comma-separated or one per line, whose targets come before targets: citation, npm, cargo, typst, quarto-extension or r. r also switches to R package versions and NEWS.md."
     required: false
     default: ""
   targets:

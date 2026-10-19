@@ -65,6 +65,12 @@ run_land MODE=merge
 refuses_landing "mode" "unknown mode"
 run_land FILES=
 refuses_landing "files" "empty files"
+run_land FILES= ALLOW_UNCHANGED=true
+assert_status 0 "${STATUS}" "empty files with allow-unchanged: ${ERR}"
+assert_eq false "$(output_value changed "${OUT}")" "empty files changed output"
+assert_eq "" "$(output_value sha "${OUT}")" "empty files sha output"
+assert_contains "${ERR}" "nothing to land" "empty files notice"
+assert_eq "$(git -C "${GH_ORIGIN}" rev-parse main)" "$(git rev-parse HEAD)" "empty files adds no commit"
 run_land FILES=missing.txt
 refuses_landing "missing.txt" "missing file"
 run_land VERSION=1.5
