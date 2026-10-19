@@ -703,3 +703,23 @@ before="$(tree_sum)"
 run_bump BUMP=minor ECOSYSTEMS=npm
 refuses "the npm preset" "npm with a nested version only"
 assert_eq "${before}" "$(tree_sum)" "tree unchanged with a nested version only"
+
+# A long top-level version beside a short nested one: the top-level line is written.
+fixture
+git_fixture
+printf '{\n  "version": "1.4.2-beta.1",\n  "dependencies": {\n    "x": {\n      "version": "1.0.0"\n    }\n  }\n}\n' >package.json
+git add -A
+git commit -q -m files
+run_bump BUMP=minor ECOSYSTEMS=npm
+assert_status 0 "${STATUS}" "long top-level version: ${ERR}"
+assert_eq '  "version": "1.5.0",' "$(sed -n 2p package.json)" "top-level version written"
+assert_eq '      "version": "1.0.0"' "$(sed -n 5p package.json)" "nested version untouched"
+
+# No Cargo.lock: no cargo call, and cargo need not be installed.
+cargo_fixture
+git rm -q Cargo.lock
+git commit -q -m nolock
+run_bump BUMP=minor ECOSYSTEMS=cargo PATH="$(path_without cargo)"
+assert_status 0 "${STATUS}" "cargo without Cargo.lock: ${ERR}"
+assert_eq 'version = "1.5.0"' "$(sed -n 3p Cargo.toml)" "Cargo.toml written without a lock file"
+assert_eq "" "$(cat "${PM_LOG}")" "no cargo call without Cargo.lock"

@@ -33,7 +33,14 @@ assert_eq "" "$(ecosystem_source)" "no preset, no source"
 
 # Commands: none for the target-only presets.
 assert_eq "" "$(ecosystem_commands citation typst quarto-extension)" "no commands"
-assert_eq 'cargo update --workspace --offline || cargo update --workspace' "$(ecosystem_commands cargo)" "cargo command"
+cd "${SCRATCH}"
+mkdir -p lockrepo
+cd lockrepo
+assert_eq "" "$(ecosystem_commands cargo)" "cargo without a lock file"
+printf '# lock\n' >Cargo.lock
+assert_eq 'cargo update --workspace --offline || cargo update --workspace' "$(ecosystem_commands cargo)" "cargo with a lock file"
+cd "${SCRATCH}"
+rm -r lockrepo
 
 # Targets.
 cd "${SCRATCH}"
@@ -94,4 +101,12 @@ printf '{\n  "dependencies": {\n    "x": {\n      "version": "2.0.0"\n    }\n  }
 run ecosystem_targets npm
 refuses 'the npm preset' "npm without a top-level version"
 assert_contains "${ERR}" "no top-level" "npm without a top-level version message"
+rm package.json
+
+printf '{\n  "version": "1.0.0-beta.1",\n  "x": {\n      "version": "2.0.0"\n  }\n}\n' >package.json
+assert_eq $'- file: \'package.json\'\n  pattern: \'^  "version": "{version}",$\'' "$(ecosystem_targets npm)" "shallowest indentation wins over a shorter match"
+printf '{"x":{\n "version":"2.0.0"},\n"version":"1.0.0"\n}\n' >package.json
+assert_eq $'- file: \'package.json\'\n  pattern: \'^"version":"{version}"$\'' "$(ecosystem_targets npm)" "compact form kept"
+printf '{\n  "version" : "1.0.0",\n}\n' >package.json
+assert_eq $'- file: \'package.json\'\n  pattern: \'^  "version" : "{version}",$\'' "$(ecosystem_targets npm)" "spaced colon kept"
 rm package.json

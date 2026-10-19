@@ -48,20 +48,27 @@ ecosystem_quote() {
 # nested one sits deeper. A missing file gets two spaces and a comma, for the
 # target checks to report. Stops when FILE has no top-level "version".
 ecosystem_json_pattern() {
-  local form="  |,"
+  local form="  |: |,"
   if [[ -f "$1" ]]; then
     [[ -n "$(yq -p json -r '.version // ""' "$1" 2>/dev/null || true)" ]] ||
       die "$1 has no top-level \"version\" key, which the npm preset writes. Add one, or remove npm from ecosystems."
     form="$(LC_ALL=C awk '
-      match($0, /^[ \t]*"version": "[^"]*"/) && (!found || RLENGTH < blen) {
+      match($0, /^[ \t]*"version"[ \t]*:[ \t]*"[^"]*"/) {
         indent = $0
         sub(/"version".*$/, "", indent)
-        comma = ($0 ~ /"version": "[^"]*",[ \t\r]*$/) ? "," : ""
-        blen = RLENGTH; found = 1
+        if (found && length(indent) >= best) next
+        best = length(indent); found = 1
+        key = $0
+        sub(/^[ \t]*"version"/, "", key)
+        sub(/"[^"]*".*$/, "", key)
+        sep = key
+        comma = ($0 ~ /"[ \t]*,[ \t\r]*$/) ? "," : ""
+        line = indent "|" sep "|" comma
       }
-      END { if (found) printf "%s|%s", indent, comma }' "$1")"
+      END { if (found) printf "%s", line }' "$1")"
   fi
-  printf '^%s"version": "{version}"%s$' "${form%%|*}" "${form#*|}"
+  local indent="${form%%|*}" rest="${form#*|}"
+  printf '^%s"version"%s"{version}"%s$' "${indent}" "${rest%%|*}" "${rest#*|}"
 }
 
 # Prints the YAML target items of each preset in NAMES, in order. The first
@@ -120,7 +127,10 @@ ecosystem_commands() {
       fi
       ;;
     cargo)
-      printf '%s\n' 'cargo update --workspace --offline || cargo update --workspace'
+      # A repository that tracks no Cargo.lock keeps none.
+      if [[ -f Cargo.lock ]]; then
+        printf '%s\n' 'cargo update --workspace --offline || cargo update --workspace'
+      fi
       ;;
     *) die "unknown ecosystem '${name}'. Use ${ECOSYSTEM_LIST}." ;;
     esac
