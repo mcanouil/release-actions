@@ -31,6 +31,8 @@ MERGE_TIMEOUT="${MERGE_TIMEOUT:-600}"
 POLL_INTERVAL="${LAND_POLL_INTERVAL:-10}"
 BLOCKED_AFTER="${LAND_BLOCKED_AFTER:-120}"
 MERGE_GRACE="${LAND_MERGE_GRACE:-30}"
+LABELS="${LABELS:-}"
+ASSIGNEES="${ASSIGNEES:-}"
 LABEL='Type: CI/CD :robot:'
 
 require_tools git
@@ -64,6 +66,46 @@ if [[ "${MODE}" == "pull-request" ]]; then
   if [[ -z "${PR_BRANCH}" && -z "${VERSION}" ]]; then
     die "branch is empty and there is no version. Pass the head branch of the pull request."
   fi
+fi
+
+# Splits a comma-separated list into SPLIT. Items are trimmed and empty ones
+# dropped; a name keeps its inner spaces.
+split_list() {
+  local -a parts=()
+  local item
+  SPLIT=()
+  IFS=',' read -r -a parts <<<"$1" || true
+  for item in ${parts[@]+"${parts[@]}"}; do
+    item="${item#"${item%%[![:space:]]*}"}"
+    item="${item%"${item##*[![:space:]]}"}"
+    [[ -z "${item}" ]] || SPLIT+=("${item}")
+  done
+}
+
+# Says which labels and assignees a failed pull request call asked for.
+label_hint() {
+  local hint=""
+  [[ ${#label_names[@]} -eq 0 ]] || hint=" Labels asked for: $(join_list "${label_names[@]}"). The repository must have each one."
+  [[ ${#assignee_names[@]} -eq 0 ]] || hint="${hint} Assignees asked for: $(join_list "${assignee_names[@]}"). Each must be able to take the pull request."
+  printf '%s' "${hint}"
+}
+
+join_list() {
+  local out="" item
+  for item in "$@"; do
+    out="${out:+${out}, }'${item}'"
+  done
+  printf '%s' "${out}"
+}
+
+label_names=()
+assignee_names=()
+split_list "${LABELS}"
+for item in ${SPLIT[@]+"${SPLIT[@]}"}; do label_names+=("${item}"); done
+split_list "${ASSIGNEES}"
+for item in ${SPLIT[@]+"${SPLIT[@]}"}; do assignee_names+=("${item}"); done
+if [[ "${MODE}" == "push" && (${#label_names[@]} -gt 0 || ${#assignee_names[@]} -gt 0) ]]; then
+  warn "labels and assignees only apply to a pull request, and mode is push: ignored."
 fi
 
 tag="${TAG_PREFIX}${VERSION}"
@@ -177,7 +219,7 @@ die_landed() {
 # so its review comments stay, and its branch is left alone when it already
 # holds the same files, so its approvals and checks stay too.
 open_pull_request() {
-  local head="$1" open="" labels=()
+  local head="$1" open="" name url="" labels=() assignees=() edit_args=()
   if git ls-remote --exit-code --heads origin "${head}" >/dev/null 2>&1; then
     open="$(gh pr list --repo "${REPOSITORY}" --head "${head}" --state open --json number,url \
       --jq '.[0] | select(.) | "\(.number) \(.url)"')" ||
@@ -200,18 +242,33 @@ open_pull_request() {
       die "the token could not push ${head}. Check that it has contents: write on ${REPOSITORY}."
   fi
   if [[ -n "${open}" ]]; then
-    gh pr edit "${open%% *}" --repo "${REPOSITORY}" --title "${pr_message}" --body "${BODY}" >&2 ||
-      die "could not update the pull request #${open%% *} of ${head}."
+    for name in ${label_names[@]+"${label_names[@]}"}; do
+      edit_args+=(--add-label "${name}")
+    done
+    for name in ${assignee_names[@]+"${assignee_names[@]}"}; do
+      edit_args+=(--add-assignee "${name}")
+    done
+    gh pr edit "${open%% *}" --repo "${REPOSITORY}" --title "${pr_message}" --body "${BODY}" \
+      ${edit_args[@]+"${edit_args[@]}"} >&2 ||
+      die "could not update the pull request #${open%% *} of ${head}.$(label_hint)"
     printf '%s\n' "${open#* }"
     return 0
   fi
   if gh label list --repo "${REPOSITORY}" --limit 1000 --json name --jq '.[].name' | grep -qxF "${LABEL}"; then
     labels=(--label "${LABEL}")
   fi
+  for name in ${label_names[@]+"${label_names[@]}"}; do
+    labels+=(--label "${name}")
+  done
+  for name in ${assignee_names[@]+"${assignee_names[@]}"}; do
+    assignees+=(--assignee "${name}")
+  done
   # gh prints the pull request URL as the last line of its output.
-  gh pr create --repo "${REPOSITORY}" --base "${BRANCH}" --head "${head}" \
+  url="$(gh pr create --repo "${REPOSITORY}" --base "${BRANCH}" --head "${head}" \
     --title "${pr_message}" --body "${BODY}" \
-    ${labels[@]+"${labels[@]}"} | tail -n 1
+    ${labels[@]+"${labels[@]}"} ${assignees[@]+"${assignees[@]}"})" ||
+    die "could not create the pull request of ${head}.$(label_hint)"
+  printf '%s\n' "${url}" | tail -n 1
 }
 
 land_pull_request() {

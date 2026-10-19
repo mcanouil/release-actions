@@ -116,9 +116,17 @@ case "$*" in
 "pr list"*)
   [[ -z "${GH_STALE_PR:-}" ]] || echo "${GH_STALE_PR}"
   ;;
-"pr create"*)
-  echo "Creating pull request"
-  echo "https://github.com/o/r/pull/7"
+"pr create"* | "pr edit"*)
+  if [[ -n "${GH_BAD_LABEL:-}" && "$*" == *"label ${GH_BAD_LABEL}"* ]]; then
+    echo "could not add label: '${GH_BAD_LABEL}' not found" >&2
+    exit 1
+  fi
+  case "$1 $2" in
+  "pr create")
+    echo "Creating pull request"
+    echo "https://github.com/o/r/pull/7"
+    ;;
+  esac
   ;;
 "pr view"*)
   pos=$(($(cat "${GH_PR_SCRIPT}.pos" 2>/dev/null || echo 0) + 1))

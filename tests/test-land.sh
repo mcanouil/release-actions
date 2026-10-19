@@ -169,6 +169,37 @@ assert_status 0 "${STATUS}" "label: ${ERR}"
 assert_contains "${LOG}" "--label Type: CI/CD :robot:" "label"
 
 fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr LABELS='Type: CI/CD :robot:, ci, ,' ASSIGNEES=' mcanouil , ,octocat'
+assert_status 0 "${STATUS}" "labels and assignees: ${ERR}"
+assert_contains "${LOG}" "--label Type: CI/CD :robot: --label ci --assignee mcanouil --assignee octocat" "create labels and assignees"
+
+fixture
+git push -q origin HEAD:refs/heads/release/v1.5.0
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3' LABELS='Type: CI/CD :robot:, ci' ASSIGNEES=mcanouil
+assert_status 0 "${STATUS}" "reused labels: ${ERR}"
+assert_contains "${LOG}" "--add-label Type: CI/CD :robot: --add-label ci --add-assignee mcanouil" "edit labels and assignees"
+
+fixture
+run_land LABELS=ci ASSIGNEES=mcanouil
+assert_status 0 "${STATUS}" "push with labels: ${ERR}"
+assert_contains "${ERR}" "labels and assignees only apply to a pull request" "push notice"
+assert_eq "" "$(cat "${GH_LOG}")" "push makes no gh call"
+
+fixture
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr LABELS='ci, nope' GH_BAD_LABEL=nope
+refuses "nope" "missing label"
+assert_contains "${ERR}" "label" "missing label message"
+
+fixture
+git push -q origin HEAD:refs/heads/release/v1.5.0
+pr_script 'MERGEABLE|CLEAN'
+run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3' LABELS='nope' GH_BAD_LABEL=nope
+refuses "nope" "missing label on reused pull request"
+
+fixture
 git push -q origin HEAD:refs/heads/release/v1.5.0
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
 run_pr GH_STALE_PR='3 https://github.com/o/r/pull/3'
