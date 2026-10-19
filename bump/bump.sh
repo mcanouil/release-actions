@@ -392,7 +392,7 @@ if [[ -n "${AFTER_BUMP}" || -n "${preset_commands}" ]]; then
   while IFS= read -r command; do
     [[ -n "${command}" ]] || continue
     bash -euo pipefail -c "${command}" ||
-      die "the command of an ecosystems preset failed: ${command}. The version is written but nothing is committed; fix the command and dispatch again."
+      die "the command of an ecosystems preset failed: ${command}. The version is written but nothing is committed. Check the lock file and the network access of the runner, or remove the preset from ecosystems, then dispatch again."
   done <<<"${preset_commands}"
   if [[ -n "${AFTER_BUMP}" ]]; then
     bash -euo pipefail -c "${AFTER_BUMP}" ||

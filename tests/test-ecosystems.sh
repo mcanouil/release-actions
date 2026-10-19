@@ -87,3 +87,11 @@ assert_eq $'- file: \'package.json\'\n  pattern: \'^\t"version": "{version}",$\'
 printf '{\n    "x": {\n        "version": "2.0.0",\n    },\n    "version": "1.0.0",\n}\n' >package.json
 assert_eq $'- file: \'package.json\'\n  pattern: \'^    "version": "{version}",$\'' "$(ecosystem_targets npm)" "shallowest version line wins"
 rm package.json
+
+printf '{\n  "name": "demo",\n  "version": "1.0.0"\n}\n' >package.json
+assert_eq $'- file: \'package.json\'\n  pattern: \'^  "version": "{version}"$\'' "$(ecosystem_targets npm)" "npm target with the version as the last key"
+printf '{\n  "dependencies": {\n    "x": {\n      "version": "2.0.0"\n    }\n  }\n}\n' >package.json
+run ecosystem_targets npm
+refuses 'the npm preset' "npm without a top-level version"
+assert_contains "${ERR}" "no top-level" "npm without a top-level version message"
+rm package.json

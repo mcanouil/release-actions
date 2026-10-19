@@ -682,3 +682,24 @@ case "${ERR}" in
   exit 1
   ;;
 esac
+
+# A package.json whose top-level version is the last key.
+fixture
+git_fixture
+printf '{\n  "name": "demo",\n  "version": "1.4.2"\n}\n' >package.json
+git add -A
+git commit -q -m files
+run_bump BUMP=minor ECOSYSTEMS=npm
+assert_status 0 "${STATUS}" "version as the last key: ${ERR}"
+assert_eq '  "version": "1.5.0"' "$(sed -n 3p package.json)" "version without a comma written"
+
+# Only a nested version: refused, nothing written.
+fixture
+git_fixture
+printf '{\n  "dependencies": {\n    "x": {\n      "version": "1.0.0"\n    }\n  }\n}\n' >package.json
+git add -A
+git commit -q -m files
+before="$(tree_sum)"
+run_bump BUMP=minor ECOSYSTEMS=npm
+refuses "the npm preset" "npm with a nested version only"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged with a nested version only"

@@ -42,25 +42,32 @@ ecosystem_quote() {
   esac
 }
 
-# Prints the indentation of the top-level "version" key of the package.json
-# FILE: the shortest indentation among its "version" lines, since a nested one
-# sits deeper. Prints two spaces when FILE is missing or has none.
-ecosystem_json_indent() {
-  local indent=""
+# Prints the pattern of the top-level "version" line of the package.json FILE,
+# in the form the file uses: its indentation and a trailing comma or none. The
+# top-level line is the "version" line with the shortest indentation, since a
+# nested one sits deeper. A missing file gets two spaces and a comma, for the
+# target checks to report. Stops when FILE has no top-level "version".
+ecosystem_json_pattern() {
+  local form="  |,"
   if [[ -f "$1" ]]; then
-    indent="$(LC_ALL=C awk '
-      match($0, /^[ \t]+"version": "/) && (best == "" || RLENGTH < blen) {
-        best = substr($0, 1, RLENGTH - 12); blen = RLENGTH; found = 1
+    [[ -n "$(yq -p json -r '.version // ""' "$1" 2>/dev/null || true)" ]] ||
+      die "$1 has no top-level \"version\" key, which the npm preset writes. Add one, or remove npm from ecosystems."
+    form="$(LC_ALL=C awk '
+      match($0, /^[ \t]*"version": "[^"]*"/) && (!found || RLENGTH < blen) {
+        indent = $0
+        sub(/"version".*$/, "", indent)
+        comma = ($0 ~ /"version": "[^"]*",[ \t\r]*$/) ? "," : ""
+        blen = RLENGTH; found = 1
       }
-      END { if (found) print best }' "$1")"
+      END { if (found) printf "%s|%s", indent, comma }' "$1")"
   fi
-  printf '%s' "${indent:-  }"
+  printf '^%s"version": "{version}"%s$' "${form%%|*}" "${form#*|}"
 }
 
 # Prints the YAML target items of each preset in NAMES, in order. The first
 # item of a preset that names a manifest is its version line.
 ecosystem_targets() {
-  local name quote manifests count
+  local name quote manifests count pattern
   for name in "$@"; do
     case "${name}" in
     citation)
@@ -70,7 +77,8 @@ ecosystem_targets() {
       ecosystem_item CITATION.cff "^date-released: ${quote}{date}${quote}\$"
       ;;
     npm)
-      ecosystem_item package.json "^$(ecosystem_json_indent package.json)\"version\": \"{version}\",\$"
+      pattern="$(ecosystem_json_pattern package.json)" || return 1
+      ecosystem_item package.json "${pattern}"
       ;;
     cargo)
       ecosystem_item Cargo.toml '^version = "{version}"$' '[package]'

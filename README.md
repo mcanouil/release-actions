@@ -271,6 +271,7 @@ It writes `Version` in `DESCRIPTION` and rolls `NEWS.md`.
   Only the `r` preset accepts `dev`.
 - `calver` and an explicit version of four parts stop the step.
 - A version of four parts is a development version, so it needs no tag.
+  Land a `dev` bump with `message` and `allow-unchanged: true`, not with `version`, since `land` takes a release version of three parts.
 
 `NEWS.md` has level-1 sections:
 
