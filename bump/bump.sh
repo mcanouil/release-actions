@@ -132,23 +132,10 @@ if [[ ${source_index} -lt 0 ]]; then
   source_index=${preset_source_index}
 fi
 
-# A target listed twice, such as a caller target that a preset writes too.
-if [[ ${#ecosystems[@]} -gt 0 ]]; then
-  for ((i = 0; i < n; i++)); do
-    for ((j = i + 1; j < n; j++)); do
-      if [[ "${t_file[i]}" == "${t_file[j]}" && "${t_pattern[i]}" == "${t_pattern[j]}" ]]; then
-        if [[ ${i} -lt ${preset_count} && ${j} -ge ${preset_count} ]]; then
-          die "the target ${t_file[i]} with the pattern '${t_pattern[i]}' is listed twice. Remove it from targets, since a preset in ecosystems already writes it."
-        fi
-        die "the target ${t_file[i]} with the pattern '${t_pattern[i]}' is listed twice. Keep one."
-      fi
-    done
-  done
-fi
-
-# Every (file, pattern) pair to rewrite.
+# Every (file, pattern) pair to rewrite, with the index of its target.
 e_file=()
 e_pattern=()
+e_target=()
 
 # Prints PATTERN as the line it expects, without its anchors, such as
 # "version: X.Y.Z" for "^version: {version}$".
@@ -174,11 +161,28 @@ for ((i = 0; i < n; i++)); do
     fi
     e_file+=("${path}")
     e_pattern+=("${t_pattern[i]}")
+    e_target+=("${i}")
   done < <(compgen -G "${t_file[i]}" || true)
   if [[ ${matched_files} -eq 0 && "${t_required[i]}" != "false" ]]; then
     die "no file matches '${t_file[i]}'. Fix the path, or set required: false on this target."
   fi
 done
+
+# A file and pattern written twice, such as by a caller target that a preset
+# writes too. The paths are compared after glob expansion, so a literal path
+# and a glob that matches it count as the same file.
+if [[ ${#ecosystems[@]} -gt 0 ]]; then
+  for ((i = 0; i < ${#e_file[@]}; i++)); do
+    for ((j = i + 1; j < ${#e_file[@]}; j++)); do
+      if [[ "${e_file[i]}" == "${e_file[j]}" && "${e_pattern[i]}" == "${e_pattern[j]}" ]]; then
+        if [[ ${e_target[i]} -lt ${preset_count} && ${e_target[j]} -ge ${preset_count} ]]; then
+          die "the target ${e_file[i]} with the pattern '${e_pattern[i]}' is listed twice. Remove it from targets, since a preset in ecosystems already writes it."
+        fi
+        die "the target ${e_file[i]} with the pattern '${e_pattern[i]}' is listed twice. Keep one."
+      fi
+    done
+  done
+fi
 
 # Current version.
 case "${VERSION_SOURCE}" in

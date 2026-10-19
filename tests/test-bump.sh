@@ -538,3 +538,10 @@ refuses "unknown ecosystem 'foo'" "unknown ecosystem"
 fixture
 run_bump BUMP=patch ECOSYSTEMS="typst, typst"
 refuses "is listed twice. Keep one." "preset listed twice"
+
+fixture
+before="$(tree_sum)"
+run_bump BUMP=patch ECOSYSTEMS=quarto-extension TARGETS="- file: _extensions/demo/_extension.yml
+  pattern: '^version: {version}\$'"
+refuses "listed twice. Remove it from targets, since a preset" "caller path duplicates the quarto-extension glob"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged after a duplicate path"
