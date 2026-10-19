@@ -9,6 +9,10 @@ SCRIPT_NAME=notes
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
 # shellcheck disable=SC1091 # lib/common.sh is linted as a file of its own.
 source "${LIB}/common.sh"
+# shellcheck disable=SC1091 # lib/ecosystems.sh is linted as a file of its own.
+source "${LIB}/ecosystems.sh"
+# shellcheck disable=SC1091 # lib/r.sh is linted as a file of its own.
+source "${LIB}/r.sh"
 
 NOTES_FILE="${NOTES_FILE:-}"
 VERSION="${VERSION:-}"
@@ -22,6 +26,7 @@ TAG="${TAG:-}"
 TARGET="${TARGET:-${GITHUB_SHA:-}}"
 PREVIOUS_TAG="${PREVIOUS_TAG:-}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
+ECOSYSTEMS="${ECOSYSTEMS:-}"
 MAX_LENGTH=125000
 
 require_tools perl
@@ -29,10 +34,29 @@ require_bool generate-notes "${GENERATE_NOTES}"
 RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 [[ -n "${NOTES_FILE}" || -n "${VERSION}" ]] || die "set notes-file, or version to read the section from ${CHANGELOG}."
 
+r_listed=false
+names="$(ecosystem_names "${ECOSYSTEMS}")"
+while IFS= read -r name; do
+  [[ "${name}" != "r" ]] || r_listed=true
+done <<<"${names}"
+
 # Section.
 if [[ -n "${NOTES_FILE}" ]]; then
   [[ -f "${NOTES_FILE}" ]] || die "notes-file ${NOTES_FILE} does not exist. Pass the notes-file output of the bump action."
   section="$(cat "${NOTES_FILE}")"
+elif [[ "${r_listed}" == "true" ]]; then
+  # NEWS.md replaces the default changelog, not one that the caller names.
+  [[ "${CHANGELOG}" != "CHANGELOG.md" ]] || CHANGELOG=NEWS.md
+  [[ -f "${CHANGELOG}" ]] || die "${CHANGELOG} does not exist."
+  package="$(r_package DESCRIPTION)"
+  status=0
+  section="$(r_news_section "${CHANGELOG}" "${package}" "${VERSION}")" || status=$?
+  case "${status}" in
+  0) ;;
+  2) die "${CHANGELOG} has no heading '# ${package} ${VERSION}'." ;;
+  3) die "${CHANGELOG} has more than one heading '# ${package} ${VERSION}'." ;;
+  *) die "could not read ${CHANGELOG}." ;;
+  esac
 else
   [[ -f "${CHANGELOG}" ]] || die "${CHANGELOG} does not exist."
   status=0

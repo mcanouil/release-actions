@@ -8,6 +8,8 @@ export RUNNER_TEMP="${SCRATCH}/tmp" GITHUB_REPOSITORY=o/r GH_TAGS="${SCRATCH}/ta
 mkdir -p "${RUNNER_TEMP}"
 : >"${GH_TAGS}"
 install_fake_gh
+export PM_LOG="${SCRATCH}/pm.log"
+install_fake_pm
 
 # Writes a fresh fixture repository at SCRATCH/repo and moves into it.
 fixture() {
@@ -464,3 +466,260 @@ run_bump BUMP=minor TARGETS="${TARGETS_ALL}" AFTER_BUMP='rm a'
 assert_status 0 "${STATUS}" "prefix paths: ${ERR}"
 assert_eq $'CHANGELOG.md\nCITATION.cff\nREADME.md\n_extensions/demo/_extension.yml\ntypst.toml' \
   "$(multiline_output files "${OUT}")" "prefix paths keep only what after-bump changed"
+
+# Ecosystem presets expand into targets before the caller's targets.
+fixture
+sed -i.bak 's/^version: 1.4.2$/version: "1.4.2"/' CITATION.cff && rm CITATION.cff.bak
+run_bump BUMP=patch ECOSYSTEMS=citation
+assert_status 0 "${STATUS}" "quoted citation preset: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "citation alone is the source"
+assert_eq 'version: "1.4.3"' "$(sed -n 3p CITATION.cff)" "quoted version kept quoted"
+assert_eq 'date-released: "2026-10-15"' "$(sed -n 4p CITATION.cff)" "quoted date kept quoted"
+assert_eq $'CHANGELOG.md\nCITATION.cff' "$(multiline_output files "${OUT}")" "citation preset files"
+
+fixture
+sed -i.bak 's/^date-released: "2026-01-02"$/date-released: 2026-01-02/' CITATION.cff && rm CITATION.cff.bak
+run_bump BUMP=patch ECOSYSTEMS=citation
+assert_status 0 "${STATUS}" "unquoted citation preset: ${ERR}"
+assert_eq 'version: 1.4.3' "$(sed -n 3p CITATION.cff)" "unquoted version kept unquoted"
+assert_eq 'date-released: 2026-10-15' "$(sed -n 4p CITATION.cff)" "unquoted date kept unquoted"
+
+fixture
+sed -i.bak 's/^version: 1.4.2$/version: 1.4.0/' CITATION.cff && rm CITATION.cff.bak
+run_bump BUMP=patch ECOSYSTEMS=$'typst,\n citation'
+assert_status 0 "${STATUS}" "typst and citation presets: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "typst.toml is the source"
+assert_eq 'version = "1.4.3"' "$(sed -n 3p typst.toml)" "typst.toml written"
+assert_eq 'version: 1.4.3' "$(sed -n 3p CITATION.cff)" "CITATION.cff written"
+assert_eq $'CHANGELOG.md\nCITATION.cff\ntypst.toml' "$(multiline_output files "${OUT}")" "typst and citation files"
+
+fixture
+sed -i.bak 's/^version: 1.4.2$/version: 1.4.0/' CITATION.cff && rm CITATION.cff.bak
+run_bump BUMP=patch ECOSYSTEMS="citation" TARGETS="- file: typst.toml
+  pattern: '^version = \"{version}\"\$'
+  source: true"
+assert_status 0 "${STATUS}" "caller source over citation: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "caller source: true wins over the presets"
+
+fixture
+mkdir -p _extensions/acme/dep
+printf 'title: Dep\nversion: 9.9.9\n' >_extensions/acme/dep/_extension.yml
+run_bump BUMP=minor ECOSYSTEMS=quarto-extension TARGETS="- file: README.md
+  pattern: '@preview/demo:{version}'"
+assert_status 0 "${STATUS}" "quarto-extension preset: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "own manifest is the source"
+assert_eq "version: 1.5.0" "$(sed -n 2p _extensions/demo/_extension.yml)" "own manifest written"
+assert_eq "version: 9.9.9" "$(sed -n 2p _extensions/acme/dep/_extension.yml)" "vendored manifest untouched"
+assert_eq 2 "$(grep -c '@preview/demo:1.5.0' README.md)" "caller target written after the preset"
+
+fixture
+mkdir -p _extensions/other
+printf 'version: 1.4.2\n' >_extensions/other/_extension.yml
+run_bump BUMP=patch ECOSYSTEMS=quarto-extension
+refuses "_extensions/demo/_extension.yml and _extensions/other/_extension.yml" "two extension manifests"
+rm -r _extensions
+run_bump BUMP=patch ECOSYSTEMS=quarto-extension
+refuses "no file matches '_extensions/*/_extension.yml'" "no extension manifest"
+
+fixture
+before="$(tree_sum)"
+run_bump BUMP=patch ECOSYSTEMS=typst TARGETS="- file: typst.toml
+  pattern: '^version = \"{version}\"\$'"
+refuses "listed twice. Remove it from targets, since a preset" "caller target duplicates a preset target"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged after a duplicate target"
+
+fixture
+rm typst.toml
+run_bump BUMP=patch ECOSYSTEMS="citation, typst"
+refuses "no file matches 'typst.toml'" "typst preset with no typst.toml"
+
+fixture
+run_bump BUMP=patch ECOSYSTEMS="typst, foo"
+refuses "unknown ecosystem 'foo'" "unknown ecosystem"
+
+fixture
+run_bump BUMP=patch ECOSYSTEMS="typst, typst"
+refuses "is listed twice. Keep one." "preset listed twice"
+
+fixture
+before="$(tree_sum)"
+run_bump BUMP=patch ECOSYSTEMS=quarto-extension TARGETS="- file: _extensions/demo/_extension.yml
+  pattern: '^version: {version}\$'"
+refuses "listed twice. Remove it from targets, since a preset" "caller path duplicates the quarto-extension glob"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged after a duplicate path"
+
+# npm preset: top-level version only, then one lock refresh.
+npm_fixture() {
+  fixture
+  git_fixture
+  cat >package.json <<'EOF'
+{
+  "name": "demo",
+  "version": "1.4.2",
+  "dependencies": {
+    "left-pad": {
+      "version": "1.0.0",
+      "other": 1
+    }
+  }
+}
+EOF
+  printf '{"lockfileVersion": 3}\n' >package-lock.json
+  git add -A
+  git commit -q -m files
+  : >"${PM_LOG}"
+}
+
+npm_fixture
+run_bump BUMP=minor ECOSYSTEMS=npm PM_TOUCH=package-lock.json
+assert_status 0 "${STATUS}" "npm preset: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "package.json is the source"
+assert_eq '  "version": "1.5.0",' "$(sed -n 3p package.json)" "package.json version written"
+assert_eq '      "version": "1.0.0",' "$(sed -n 6p package.json)" "nested version untouched"
+assert_eq "npm install --package-lock-only --ignore-scripts --offline" "$(cat "${PM_LOG}")" "one npm call"
+assert_eq $'CHANGELOG.md\npackage-lock.json\npackage.json' "$(multiline_output files "${OUT}")" "npm files"
+
+npm_fixture
+git rm -q package-lock.json
+git commit -q -m nolock
+run_bump BUMP=minor ECOSYSTEMS=npm PM_TOUCH=package-lock.json
+assert_status 0 "${STATUS}" "npm preset without a lock file: ${ERR}"
+assert_eq "" "$(cat "${PM_LOG}")" "no npm call without package-lock.json"
+assert_eq $'CHANGELOG.md\npackage.json' "$(multiline_output files "${OUT}")" "npm files without a lock file"
+
+npm_fixture
+run_bump BUMP=minor ECOSYSTEMS=npm PM_FAIL=all
+refuses "the command of an ecosystems preset failed: npm install" "failing npm"
+
+# cargo preset: [package] version only, offline first, then online.
+cargo_fixture() {
+  fixture
+  git_fixture
+  cat >Cargo.toml <<'EOF'
+[package]
+name = "demo"
+version = "1.4.2"
+edition = "2021"
+
+[dependencies]
+version = "9.9.9"
+EOF
+  printf '# lock\n' >Cargo.lock
+  git add -A
+  git commit -q -m files
+  : >"${PM_LOG}"
+}
+
+cargo_fixture
+run_bump BUMP=minor ECOSYSTEMS="cargo, citation" PM_TOUCH=Cargo.lock
+assert_status 0 "${STATUS}" "cargo preset: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "Cargo.toml is the source"
+assert_eq 'version = "1.5.0"' "$(sed -n 3p Cargo.toml)" "[package] version written"
+assert_eq 'version = "9.9.9"' "$(sed -n 7p Cargo.toml)" "[dependencies] version untouched"
+assert_eq "cargo update --workspace --offline" "$(cat "${PM_LOG}")" "cargo offline call"
+assert_eq $'CHANGELOG.md\nCITATION.cff\nCargo.lock\nCargo.toml' "$(multiline_output files "${OUT}")" "cargo files"
+
+cargo_fixture
+run_bump BUMP=minor ECOSYSTEMS=cargo PM_TOUCH=Cargo.lock PM_FAIL=offline
+assert_status 0 "${STATUS}" "cargo falls back online: ${ERR}"
+assert_eq $'cargo update --workspace --offline\ncargo update --workspace' "$(cat "${PM_LOG}")" "cargo online fallback"
+assert_contains "$(multiline_output files "${OUT}")" "Cargo.lock" "lock joins files after the fallback"
+
+cargo_fixture
+run_bump BUMP=minor ECOSYSTEMS=cargo PM_FAIL=all
+refuses "the command of an ecosystems preset failed: cargo update" "failing cargo"
+
+# The preset commands run before after-bump, with the same environment.
+cargo_fixture
+# shellcheck disable=SC2016 # after-bump expands the variables, not this shell.
+run_bump BUMP=minor ECOSYSTEMS=cargo PM_TOUCH=Cargo.lock AFTER_BUMP='cat Cargo.lock >seen.txt'
+assert_status 0 "${STATUS}" "cargo with after-bump: ${ERR}"
+assert_eq "refreshed 1.5.0" "$(cat seen.txt)" "commands ran before after-bump with VERSION set"
+
+# A preset target that finds no line names the preset and the section.
+fixture
+git_fixture
+printf '[workspace.package]\nversion = "1.4.2"\n' >Cargo.toml
+git add -A
+git commit -q -m files
+run_bump BUMP=minor ECOSYSTEMS=cargo
+refuses "the cargo preset found no line that matches" "cargo without [package]"
+assert_contains "${ERR}" "under [package]" "cargo message names the section"
+case "${ERR}" in
+*"required: false"*)
+  echo "  cargo message: [${ERR}] mentions required: false" >&2
+  exit 1
+  ;;
+esac
+
+# The tool of a preset command is checked before the first write.
+cargo_fixture
+before="$(tree_sum)"
+run_bump BUMP=minor ECOSYSTEMS=cargo PATH="$(path_without cargo)"
+refuses "cargo is not on PATH" "missing cargo"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged without cargo"
+
+# A tab-indented package.json: the top-level version only.
+fixture
+git_fixture
+printf '{\n\t"name": "demo",\n\t"version": "1.4.2",\n\t"dependencies": {\n\t\t"left-pad": {\n\t\t\t"version": "1.0.0"\n\t\t}\n\t}\n}\n' >package.json
+git add -A
+git commit -q -m files
+run_bump BUMP=minor ECOSYSTEMS="npm, citation"
+assert_status 0 "${STATUS}" "tab-indented package.json: ${ERR}"
+assert_eq "1.4.2" "$(output_value previous "${OUT}")" "package.json is the source"
+assert_eq $'\t"version": "1.5.0",' "$(sed -n 3p package.json)" "tab-indented version written"
+assert_eq $'\t\t\t"version": "1.0.0"' "$(sed -n 6p package.json)" "deeper version untouched"
+
+# A preset with a missing file names the preset and offers no required: false.
+fixture
+rm CITATION.cff
+run_bump BUMP=minor ECOSYSTEMS=citation
+refuses "the citation preset needs" "citation without CITATION.cff"
+case "${ERR}" in
+*"required: false"*)
+  echo "  missing file message: [${ERR}] mentions required: false" >&2
+  exit 1
+  ;;
+esac
+
+# A package.json whose top-level version is the last key.
+fixture
+git_fixture
+printf '{\n  "name": "demo",\n  "version": "1.4.2"\n}\n' >package.json
+git add -A
+git commit -q -m files
+run_bump BUMP=minor ECOSYSTEMS=npm
+assert_status 0 "${STATUS}" "version as the last key: ${ERR}"
+assert_eq '  "version": "1.5.0"' "$(sed -n 3p package.json)" "version without a comma written"
+
+# Only a nested version: refused, nothing written.
+fixture
+git_fixture
+printf '{\n  "dependencies": {\n    "x": {\n      "version": "1.0.0"\n    }\n  }\n}\n' >package.json
+git add -A
+git commit -q -m files
+before="$(tree_sum)"
+run_bump BUMP=minor ECOSYSTEMS=npm
+refuses "the npm preset" "npm with a nested version only"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged with a nested version only"
+
+# A long top-level version beside a short nested one: the top-level line is written.
+fixture
+git_fixture
+printf '{\n  "version": "1.4.2-beta.1",\n  "dependencies": {\n    "x": {\n      "version": "1.0.0"\n    }\n  }\n}\n' >package.json
+git add -A
+git commit -q -m files
+run_bump BUMP=minor ECOSYSTEMS=npm
+assert_status 0 "${STATUS}" "long top-level version: ${ERR}"
+assert_eq '  "version": "1.5.0",' "$(sed -n 2p package.json)" "top-level version written"
+assert_eq '      "version": "1.0.0"' "$(sed -n 5p package.json)" "nested version untouched"
+
+# No Cargo.lock: no cargo call, and cargo need not be installed.
+cargo_fixture
+git rm -q Cargo.lock
+git commit -q -m nolock
+run_bump BUMP=minor ECOSYSTEMS=cargo PATH="$(path_without cargo)"
+assert_status 0 "${STATUS}" "cargo without Cargo.lock: ${ERR}"
+assert_eq 'version = "1.5.0"' "$(sed -n 3p Cargo.toml)" "Cargo.toml written without a lock file"
+assert_eq "" "$(cat "${PM_LOG}")" "no cargo call without Cargo.lock"

@@ -10,8 +10,12 @@ inputs:
     description: "Value of {version} in the header. Without notes-file, also the version whose section is read from the changelog."
     required: false
     default: ""
+  ecosystems:
+    description: "Comma-separated presets: citation, npm, cargo, typst, quarto-extension or r. r reads the section from NEWS.md under '# <Package> <version>', with the package name from DESCRIPTION. Read only without notes-file."
+    required: false
+    default: ""
   changelog:
-    description: "Path of the changelog, read only without notes-file."
+    description: "Path of the changelog, read only without notes-file. With the r preset, the default CHANGELOG.md means NEWS.md."
     required: false
     default: "CHANGELOG.md"
   changelog-heading:
@@ -69,6 +73,7 @@ runs:
       env:
         NOTES_FILE: ${{ inputs.notes-file }}
         VERSION: ${{ inputs.version }}
+        ECOSYSTEMS: ${{ inputs.ecosystems }}
         CHANGELOG: ${{ inputs.changelog }}
         CHANGELOG_HEADING: ${{ inputs.changelog-heading }}
         HEADER: ${{ inputs.header }}

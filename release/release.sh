@@ -25,6 +25,7 @@ DRAFT="${DRAFT:-false}"
 PRERELEASE="${PRERELEASE:-false}"
 LATEST="${LATEST:-auto}"
 ROLLING="${ROLLING:-false}"
+EXISTING="${EXISTING:-fail}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 
 require_tools gh perl
@@ -36,6 +37,10 @@ RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 require_bool draft "${DRAFT}"
 require_bool prerelease "${PRERELEASE}"
 require_bool rolling "${ROLLING}"
+case "${EXISTING}" in
+fail | keep) ;;
+*) die "existing is '${EXISTING}'. Use fail, keep." ;;
+esac
 case "${LATEST}" in
 auto | true | false) ;;
 *) die "latest is '${LATEST}'. Use auto, true or false." ;;
@@ -66,6 +71,35 @@ fi
 title="$(printf '%s' "${TITLE}" | FILL_tag="${tag}" FILL_version="${VERSION}" FILL_date="${RELEASE_DATE}" \
   FILL_count="${count}" fill_template tag,version,date,count "title '${TITLE}'" count)"
 
+# With existing: keep, a published release of the tag on the target is the
+# result of an earlier run, so nothing changes.
+kept=0
+if [[ "${EXISTING}" == "keep" ]]; then
+  if output="$(gh release view "${tag}" --repo "${REPOSITORY}" --json isDraft --jq .isDraft 2>&1)"; then
+    [[ "${output}" != "true" ]] ||
+      die "release ${tag} is a draft. Publish or delete it, then run again."
+    gh_error="$(mktemp)"
+    if ! output="$(gh api "repos/${REPOSITORY}/git/ref/tags/${tag}" --silent 2>&1)"; then
+      if [[ "${output}" == *"HTTP 404"* ]]; then
+        die "release ${tag} exists, but tag ${tag} does not. Delete the release, then run again."
+      fi
+      die "could not read the tag ${tag}: ${output}. Check that the token can read ${REPOSITORY}."
+    fi
+    tag_commit="$(gh api "repos/${REPOSITORY}/commits/refs/tags/${tag}" --jq .sha 2>"${gh_error}")" ||
+      die "could not read the commit of the tag ${tag}: $(cat "${gh_error}"). Check that the token can read ${REPOSITORY}."
+    target_commit="$(gh api "repos/${REPOSITORY}/commits/${TARGET}" --jq .sha 2>"${gh_error}")" ||
+      die "could not resolve target '${TARGET}': $(cat "${gh_error}"). Pass a commit of ${REPOSITORY}."
+    rm -f "${gh_error}"
+    [[ "${tag_commit}" == "${target_commit}" ]] ||
+      die "tag ${tag} is on ${tag_commit}, but target is ${target_commit}. Delete the release and the tag, or pass the commit that the tag is on."
+    printf '%s: release %s already exists on %s. Nothing changed.\n' "${SCRIPT_NAME}" "${tag}" "${target_commit}" >&2
+    kept=1
+    ASSETS=""
+  elif [[ "${output}" != *"release not found"* ]]; then
+    die "could not check for the release ${tag}: ${output}. Check that the token can read ${REPOSITORY}."
+  fi
+fi
+
 asset_args=()
 while IFS= read -r line; do
   line="${line#"${line%%[![:space:]]*}"}"
@@ -89,42 +123,46 @@ while IFS= read -r line; do
   fi
 done <<<"${ASSETS}"
 
-refuse_existing_release "${REPOSITORY}" "${tag}"
-
-args=(release create "${tag}" --repo "${REPOSITORY}" --target "${TARGET}" --title "${title}" --notes-file "${BODY_FILE}")
-if [[ "${DRAFT}" == "true" ]]; then
-  args+=(--draft)
+if [[ ${kept} -eq 0 ]]; then
+  refuse_existing_release "${REPOSITORY}" "${tag}"
 fi
-if [[ "${PRERELEASE}" == "true" ]]; then
-  args+=(--prerelease)
-fi
-case "${LATEST}" in
-true) args+=(--latest) ;;
-false) args+=(--latest=false) ;;
-esac
-gh "${args[@]}" ${asset_args[@]+"${asset_args[@]}"} >/dev/null
 
 rolling_tags=()
-if [[ "${ROLLING}" == "true" ]]; then
-  for ref in "${TAG_PREFIX}$(version_major "${VERSION}")" "${TAG_PREFIX}$(version_minor "${VERSION}")"; do
-    # A backport must not move the rolling tag back from a higher release.
-    released="$(gh api --paginate "repos/${REPOSITORY}/git/matching-refs/tags/${ref}." --jq '.[].ref')" ||
-      die "could not list the tags under ${ref}. Check that the token can read ${REPOSITORY}."
-    highest="$(printf '%s\n' "${released//refs\/tags\//}" | highest_version "${TAG_PREFIX}")"
-    top="$(printf '%s\n%s\n' "${highest}" "${VERSION}" | highest_version "")"
-    if [[ "${top}" != "${VERSION}" ]]; then
-      warn "${ref} stays on ${TAG_PREFIX}${top}, which is higher than ${tag}."
-      continue
-    fi
-    if gh api "repos/${REPOSITORY}/git/ref/tags/${ref}" --silent >/dev/null 2>&1; then
-      gh api --method PATCH "repos/${REPOSITORY}/git/refs/tags/${ref}" -f "sha=${TARGET}" -F force=true --silent ||
-        die "release ${tag} exists, but ${ref} did not move. Move it by hand: git tag -f ${ref} ${TARGET} && git push --force origin ${ref}."
-    else
-      gh api --method POST "repos/${REPOSITORY}/git/refs" -f "ref=refs/tags/${ref}" -f "sha=${TARGET}" --silent ||
-        die "release ${tag} exists, but ${ref} was not created. Create it by hand: git tag ${ref} ${TARGET} && git push origin ${ref}."
-    fi
-    rolling_tags+=("${ref}")
-  done
+if [[ ${kept} -eq 0 ]]; then
+  args=(release create "${tag}" --repo "${REPOSITORY}" --target "${TARGET}" --title "${title}" --notes-file "${BODY_FILE}")
+  if [[ "${DRAFT}" == "true" ]]; then
+    args+=(--draft)
+  fi
+  if [[ "${PRERELEASE}" == "true" ]]; then
+    args+=(--prerelease)
+  fi
+  case "${LATEST}" in
+  true) args+=(--latest) ;;
+  false) args+=(--latest=false) ;;
+  esac
+  gh "${args[@]}" ${asset_args[@]+"${asset_args[@]}"} >/dev/null
+
+  if [[ "${ROLLING}" == "true" ]]; then
+    for ref in "${TAG_PREFIX}$(version_major "${VERSION}")" "${TAG_PREFIX}$(version_minor "${VERSION}")"; do
+      # A backport must not move the rolling tag back from a higher release.
+      released="$(gh api --paginate "repos/${REPOSITORY}/git/matching-refs/tags/${ref}." --jq '.[].ref')" ||
+        die "could not list the tags under ${ref}. Check that the token can read ${REPOSITORY}."
+      highest="$(printf '%s\n' "${released//refs\/tags\//}" | highest_version "${TAG_PREFIX}")"
+      top="$(printf '%s\n%s\n' "${highest}" "${VERSION}" | highest_version "")"
+      if [[ "${top}" != "${VERSION}" ]]; then
+        warn "${ref} stays on ${TAG_PREFIX}${top}, which is higher than ${tag}."
+        continue
+      fi
+      if gh api "repos/${REPOSITORY}/git/ref/tags/${ref}" --silent >/dev/null 2>&1; then
+        gh api --method PATCH "repos/${REPOSITORY}/git/refs/tags/${ref}" -f "sha=${TARGET}" -F force=true --silent ||
+          die "release ${tag} exists, but ${ref} did not move. Move it by hand: git tag -f ${ref} ${TARGET} && git push --force origin ${ref}."
+      else
+        gh api --method POST "repos/${REPOSITORY}/git/refs" -f "ref=refs/tags/${ref}" -f "sha=${TARGET}" --silent ||
+          die "release ${tag} exists, but ${ref} was not created. Create it by hand: git tag ${ref} ${TARGET} && git push origin ${ref}."
+      fi
+      rolling_tags+=("${ref}")
+    done
+  fi
 fi
 
 info="$(gh release view "${tag}" --repo "${REPOSITORY}" --json url,databaseId --jq '[.url, .databaseId] | @tsv')"

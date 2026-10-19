@@ -54,10 +54,11 @@ version_major() {
   printf '%s\n' "${core%%.*}"
 }
 
-# Prints the major and minor parts of VERSION: 1.5 for 1.5.0.
+# Prints the major and minor parts of VERSION: 1.5 for 1.5.0 and for 1.5.0.9000.
 version_minor() {
-  local core="${1%%-*}"
-  printf '%s\n' "${core%.*}"
+  local major minor
+  IFS=. read -r major minor _ <<<"${1%%-*}"
+  printf '%s.%s\n' "${major}" "${minor}"
 }
 
 # Reads tag names on standard input and prints the highest one that is PREFIX

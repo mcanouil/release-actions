@@ -178,3 +178,51 @@ assert_status 0 "${STATUS}" "footer: ${ERR}"
 assert_eq $'## Changelog\n\n- feat: Next thing. (#7)\n\n## Generated\n\n* feat: thing by @someone\n\nInstall v1.5.0.' "${BODY}" "footer appended last"
 run_notes NOTES_FILE="${notes}" FOOTER="${SCRATCH}/absent-footer.md"
 refuses "footer ${SCRATCH}/absent-footer.md does not exist" "missing footer"
+
+# ecosystems: r reads the section of NEWS.md under the package heading.
+mkdir -p "${SCRATCH}/rpkg"
+pushd "${SCRATCH}/rpkg" >/dev/null
+printf 'Package: NACHO\nVersion: 2.1.0\n' >DESCRIPTION
+cat >NEWS.md <<'EOF'
+
+# NACHO 2.1.0
+
+## New features
+
+- Add the thing.
+
+## Bug fixes
+
+- Fix the other thing.
+
+# NACHO 2.0.8
+
+- Old fix.
+EOF
+run_notes ECOSYSTEMS=r VERSION=2.1.0
+assert_status 0 "${STATUS}" "r preset: ${ERR}"
+assert_eq $'## Changelog\n\n## New features\n\n- Add the thing.\n\n## Bug fixes\n\n- Fix the other thing.' "${BODY}" "r preset reads NEWS.md"
+run_notes ECOSYSTEMS=" cargo, ,r," VERSION=2.1.0
+assert_status 0 "${STATUS}" "r preset in a list: ${ERR}"
+assert_contains "${BODY}" "- Add the thing." "r preset in a list"
+run_notes ECOSYSTEMS=r VERSION=2.1.0 CHANGELOG=docs/NEWS.md
+refuses "docs/NEWS.md does not exist" "r preset with a named changelog"
+run_notes ECOSYSTEMS=r VERSION=9.9.9
+refuses "NEWS.md has no heading '# NACHO 9.9.9'" "r preset without the heading"
+run_notes ECOSYSTEMS=r VERSION=2.1.0 NOTES_FILE="${notes}"
+assert_eq $'## Changelog\n\n- feat: Next thing. (#7)' "${BODY}" "notes-file wins over the r preset"
+rm DESCRIPTION
+run_notes ECOSYSTEMS=r VERSION=2.1.0
+refuses "DESCRIPTION does not exist" "r preset without DESCRIPTION"
+printf 'Package: NACHO\n' >DESCRIPTION
+rm NEWS.md
+run_notes ECOSYSTEMS=r VERSION=2.1.0
+refuses "NEWS.md does not exist" "r preset without NEWS.md"
+popd >/dev/null
+
+# Other presets change nothing, and unknown names fail.
+run_notes ECOSYSTEMS=cargo VERSION=1.4.2
+assert_status 0 "${STATUS}" "cargo preset: ${ERR}"
+assert_eq $'## Changelog\n\n- fix: Old thing.' "${BODY}" "cargo behaves as empty"
+run_notes ECOSYSTEMS=pip VERSION=1.4.2
+refuses "unknown ecosystem 'pip'" "unknown ecosystem"

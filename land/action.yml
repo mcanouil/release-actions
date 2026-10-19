@@ -32,6 +32,14 @@ inputs:
     description: "Pull request body. Default: the release body, else the message."
     required: false
     default: ""
+  labels:
+    description: "Labels of the pull request, comma-separated or one per line. A label the repository lacks fails the step. Ignored with a notice in push mode."
+    required: false
+    default: ""
+  assignees:
+    description: "Assignees of the pull request, comma-separated or one per line. Ignored with a notice in push mode."
+    required: false
+    default: ""
   merge:
     description: "auto merges the pull request, or turns on auto-merge when checks block it. none only opens or updates it."
     required: false
@@ -87,6 +95,8 @@ runs:
         PR_BRANCH: ${{ inputs.branch }}
         BODY: ${{ inputs.body }}
         BASE: ${{ inputs.base }}
+        LABELS: ${{ inputs.labels }}
+        ASSIGNEES: ${{ inputs.assignees }}
         MERGE: ${{ inputs.merge }}
         MERGE_METHOD: ${{ inputs.merge-method }}
         WAIT: ${{ inputs.wait }}

@@ -52,7 +52,9 @@ refuses() {
 # GH_DEFAULT_BRANCH (default main). The tags in GH_TAGS (one
 # per line) exist, GH_RELEASE_EXISTS adds a release, GH_DOWN fails every call
 # as a token or network error would, GH_RELEASE_DOWN fails only the release
-# lookup, and GH_LOG, when set, records each call. Every App bot has the user
+# lookup, GH_RELEASE_DRAFT=true makes that release a draft, GH_TAG_COMMIT is the
+# commit that every existing tag points at, GH_RESOLVE_FROM resolves to
+# GH_RESOLVE_TO as a commit (any other ref resolves to itself), and GH_LOG, when set, records each call. Every App bot has the user
 # id 123, and every token belongs to octo, with the user id 456.
 # For pull requests: GH_STALE_PR is the open pull request of the head branch,
 # as "<number> <url>",
@@ -101,6 +103,34 @@ case "$*" in
 "api /user "*)
   echo "octo 456"
   ;;
+"api repos/o/r/commits/refs/tags/"*)
+  args="$*"
+  tag="${args#api repos/o/r/commits/refs/tags/}"
+  tag="${tag%% *}"
+  if ! grep -qxF "${tag}" "${GH_TAGS}"; then
+    echo "gh: No commit found for SHA: refs/tags/${tag} (HTTP 422)" >&2
+    exit 1
+  fi
+  echo "${GH_TAG_COMMIT}"
+  ;;
+"api repos/o/r/commits/"*)
+  args="$*"
+  ref="${args#api repos/o/r/commits/}"
+  ref="${ref%% *}"
+  if [[ -n "${GH_RESOLVE_FROM:-}" && "${ref}" == "${GH_RESOLVE_FROM}" ]]; then
+    echo "${GH_RESOLVE_TO}"
+  else
+    echo "${ref}"
+  fi
+  ;;
+"release view"*"isDraft"*)
+  if [[ -n "${GH_RELEASE_EXISTS:-}" ]]; then
+    echo "${GH_RELEASE_DRAFT:-false}"
+    exit 0
+  fi
+  echo "release not found" >&2
+  exit 1
+  ;;
 "release view"*"--json"*)
   printf 'https://github.com/o/r/releases/tag/v1.5.0\t42\n'
   ;;
@@ -116,9 +146,17 @@ case "$*" in
 "pr list"*)
   [[ -z "${GH_STALE_PR:-}" ]] || echo "${GH_STALE_PR}"
   ;;
-"pr create"*)
-  echo "Creating pull request"
-  echo "https://github.com/o/r/pull/7"
+"pr create"* | "pr edit"*)
+  if [[ -n "${GH_BAD_LABEL:-}" && "$*" == *"label ${GH_BAD_LABEL}"* ]]; then
+    echo "could not add label: '${GH_BAD_LABEL}' not found" >&2
+    exit 1
+  fi
+  case "$1 $2" in
+  "pr create")
+    echo "Creating pull request"
+    echo "https://github.com/o/r/pull/7"
+    ;;
+  esac
   ;;
 "pr view"*)
   pos=$(($(cat "${GH_PR_SCRIPT}.pos" 2>/dev/null || echo 0) + 1))
@@ -146,6 +184,28 @@ case "$*" in
 esac
 EOF
   chmod +x "${SCRATCH}/bin/gh"
+}
+
+# Puts a fake npm and a fake cargo first on PATH. Each call records its
+# arguments in PM_LOG as "<tool> <arguments>". PM_FAIL makes the call fail,
+# or only the calls with --offline when it is "offline". PM_TOUCH names a file
+# that the call rewrites, as a lock refresh does.
+install_fake_pm() {
+  local tool
+  mkdir -p "${SCRATCH}/bin"
+  export PATH="${SCRATCH}/bin:${PATH}"
+  for tool in npm cargo; do
+    cat >"${SCRATCH}/bin/${tool}" <<'EOF'
+#!/usr/bin/env bash
+printf '%s %s\n' "$(basename "$0")" "$*" >>"${PM_LOG}"
+if [[ "${PM_FAIL:-}" == "all" || ("${PM_FAIL:-}" == "offline" && "$*" == *--offline*) ]]; then
+  echo "$(basename "$0"): no network" >&2
+  exit 1
+fi
+[[ -z "${PM_TOUCH:-}" ]] || printf 'refreshed %s\n' "${VERSION:-}" >"${PM_TOUCH}"
+EOF
+    chmod +x "${SCRATCH}/bin/${tool}"
+  done
 }
 
 # Prints a PATH value with the commands that the scripts use, except TOOL, to

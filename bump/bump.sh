@@ -11,8 +11,13 @@ LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
 source "${LIB}/common.sh"
 # shellcheck disable=SC1091 # lib/version.sh is linted as a file of its own.
 source "${LIB}/version.sh"
+# shellcheck disable=SC1091 # lib/ecosystems.sh is linted as a file of its own.
+source "${LIB}/ecosystems.sh"
+# shellcheck disable=SC1091 # lib/r.sh is linted as a file of its own.
+source "${LIB}/r.sh"
 
 BUMP="${BUMP:-}"
+ECOSYSTEMS="${ECOSYSTEMS:-}"
 TARGETS="${TARGETS:-}"
 VERSION_SOURCE="${VERSION_SOURCE:-target}"
 TAG_PREFIX="${TAG_PREFIX:-}"
@@ -23,26 +28,92 @@ AFTER_BUMP="${AFTER_BUMP:-}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 placeholder_regex='\{(version|date|major)\}'
 
-[[ -n "${BUMP}" ]] || die "bump is empty. Use patch, minor, major, calver, or a version such as 1.2.3."
+[[ -n "${BUMP}" ]] || die "bump is empty. Use patch, minor, major, calver, dev, or a version such as 1.2.3."
 require_tools perl yq gh
 RELEASE_DATE="$(release_date "${RELEASE_DATE:-}")"
 # Said when the files already hold a version that a failed run bumped.
 unreleased_hint="Create release {version} on the commit that bumped it, or revert that commit with a pull request, then dispatch again."
 require_bool allow-empty "${ALLOW_EMPTY}"
-if [[ -n "${AFTER_BUMP}" ]]; then
-  require_tools git
-  git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
-    die "after-bump needs a git checkout with a commit, to list the files that it changes. Run bump after actions/checkout."
-fi
 [[ "${CHANGELOG_HEADING}" == *"{version}"* ]] || die "changelog-heading '${CHANGELOG_HEADING}' has no {version} placeholder."
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
 require_tag_prefix "${TAG_PREFIX}"
 
-# Targets, as four lists with one entry per target.
+# Targets, as four lists with one entry per target: the targets of the
+# presets in ecosystems first, then the caller's targets.
 t_file=()
 t_pattern=()
 t_source=()
 t_required=()
+t_section=()
+# The preset that a target comes from, empty for the caller's targets.
+t_preset=()
+current_preset=""
+
+# Adds the entries of the YAML target list ITEMS to the four lists.
+add_targets() {
+  local file pattern source required section
+  # One field per line: @tsv would quote patterns that hold double quotes.
+  while IFS= read -r file && IFS= read -r pattern && IFS= read -r source && IFS= read -r required && IFS= read -r section; do
+    if [[ -z "${file}" || -z "${pattern}" ]]; then
+      die "every entry of targets needs file and pattern, as non-empty strings."
+    fi
+    t_file+=("${file}")
+    t_pattern+=("${pattern}")
+    t_source+=("${source}")
+    t_required+=("${required}")
+    t_section+=("${section}")
+    t_preset+=("${current_preset}")
+  done < <(yq -r '.[] | [.file, .pattern, (.source | tostring), (.required | tostring), (.section // "")] | .[]' <<<"$1")
+}
+
+ecosystems=()
+names="$(ecosystem_names "${ECOSYSTEMS}")"
+while IFS= read -r name; do
+  [[ -z "${name}" ]] || ecosystems+=("${name}")
+done <<<"${names}"
+# The r preset switches the version scheme, the tag check and the changelog
+# model to the usethis conventions for R packages.
+r_listed=false
+for name in ${ecosystems[@]+"${ecosystems[@]}"}; do
+  [[ "${name}" != "r" ]] || r_listed=true
+done
+if [[ "${r_listed}" == "true" ]]; then
+  export TARGET_VERSION_FORM=r
+  # NEWS.md replaces the default changelog, not one that the caller names.
+  [[ "${CHANGELOG}" != "CHANGELOG.md" ]] || CHANGELOG=NEWS.md
+elif [[ "${BUMP}" == "dev" ]]; then
+  die "bump is dev, which only the r preset uses. Add r to ecosystems, or use patch, minor, major, calver, or a version such as 1.2.3."
+fi
+# Index of the version target of the preset that holds the current version.
+preset_source_index=-1
+if [[ ${#ecosystems[@]} -gt 0 ]]; then
+  source_preset="$(ecosystem_source "${ecosystems[@]}")"
+  for name in "${ecosystems[@]}"; do
+    if [[ ${preset_source_index} -lt 0 && "${name}" == "${source_preset}" ]]; then
+      preset_source_index=${#t_file[@]}
+    fi
+    items="$(ecosystem_targets "${name}")"
+    current_preset="${name}"
+    add_targets "${items}"
+    current_preset=""
+  done
+fi
+preset_count=${#t_file[@]}
+
+# The commands of the presets, one per line, run before after-bump.
+preset_commands=""
+if [[ ${#ecosystems[@]} -gt 0 ]]; then
+  preset_commands="$(ecosystem_commands "${ecosystems[@]}")"
+fi
+if [[ -n "${AFTER_BUMP}" || -n "${preset_commands}" ]]; then
+  require_tools git
+  while IFS=' ' read -r tool _; do
+    [[ -z "${tool}" ]] || require_tools "${tool}"
+  done <<<"${preset_commands}"
+  git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+    die "after-bump needs a git checkout with a commit, to list the files that it changes, and so do the commands of the ecosystems presets. Run bump after actions/checkout."
+fi
+
 if [[ -n "${TARGETS//[[:space:]]/}" ]]; then
   if [[ "$(yq -r 'tag' <<<"${TARGETS}" 2>/dev/null || true)" != "!!seq" ]]; then
     die "targets is not a YAML list. Write one '- file: ...' entry per target."
@@ -65,16 +136,7 @@ if [[ -n "${TARGETS//[[:space:]]/}" ]]; then
       die "required must be true or false in every entry of targets."
     fi
   done < <(yq -r '.[] | [(.file | tag), (.pattern | tag), (.source | tag), (.required | tag)] | @tsv' <<<"${TARGETS}")
-  # One field per line: @tsv would quote patterns that hold double quotes.
-  while IFS= read -r file && IFS= read -r pattern && IFS= read -r source && IFS= read -r required; do
-    if [[ -z "${file}" || -z "${pattern}" ]]; then
-      die "every entry of targets needs file and pattern, as non-empty strings."
-    fi
-    t_file+=("${file}")
-    t_pattern+=("${pattern}")
-    t_source+=("${source}")
-    t_required+=("${required}")
-  done < <(yq -r '.[] | [.file, .pattern, (.source | tostring), (.required | tostring)] | .[]' <<<"${TARGETS}")
+  add_targets "${TARGETS}"
 fi
 n=${#t_file[@]}
 
@@ -97,10 +159,16 @@ for ((i = 0; i < n; i++)); do
     source_index=${i}
   fi
 done
+# A caller target with source: true overrides the presets.
+if [[ ${source_index} -lt 0 ]]; then
+  source_index=${preset_source_index}
+fi
 
-# Every (file, pattern) pair to rewrite.
+# Every (file, pattern) pair to rewrite, with the index of its target.
 e_file=()
 e_pattern=()
+e_target=()
+e_section=()
 
 # Prints PATTERN as the line it expects, without its anchors, such as
 # "version: X.Y.Z" for "^version: {version}$".
@@ -117,20 +185,44 @@ for ((i = 0; i < n; i++)); do
   while IFS= read -r path; do
     [[ -n "${path}" ]] || continue
     matched_files=$((matched_files + 1))
-    count="$(perl "${LIB}/target.pl" find "${t_pattern[i]}" "${path}" | wc -l | tr -d ' ')"
+    count="$(perl "${LIB}/target.pl" find "${t_pattern[i]}" "${path}" "${t_section[i]}" | wc -l | tr -d ' ')"
     if [[ "${count}" -eq 0 ]]; then
       if [[ "${t_required[i]}" == "false" ]]; then
         continue
+      fi
+      if [[ -n "${t_preset[i]}" ]]; then
+        die "${path}: the ${t_preset[i]} preset found no line that matches '${t_pattern[i]}'${t_section[i]:+ under ${t_section[i]}}. Add a line such as '$(expected_line "${t_pattern[i]}")' to the file."
       fi
       die "${path}: no line matches '${t_pattern[i]}'. Add a line such as '$(expected_line "${t_pattern[i]}")', or set required: false on this target if the file can lack it."
     fi
     e_file+=("${path}")
     e_pattern+=("${t_pattern[i]}")
+    e_target+=("${i}")
+    e_section+=("${t_section[i]}")
   done < <(compgen -G "${t_file[i]}" || true)
   if [[ ${matched_files} -eq 0 && "${t_required[i]}" != "false" ]]; then
+    if [[ -n "${t_preset[i]}" ]]; then
+      die "no file matches '${t_file[i]}', which the ${t_preset[i]} preset needs. Add it, or remove ${t_preset[i]} from ecosystems."
+    fi
     die "no file matches '${t_file[i]}'. Fix the path, or set required: false on this target."
   fi
 done
+
+# A file and pattern written twice, such as by a caller target that a preset
+# writes too. The paths are compared after glob expansion, so a literal path
+# and a glob that matches it count as the same file.
+if [[ ${#ecosystems[@]} -gt 0 ]]; then
+  for ((i = 0; i < ${#e_file[@]}; i++)); do
+    for ((j = i + 1; j < ${#e_file[@]}; j++)); do
+      if [[ "${e_file[i]}" == "${e_file[j]}" && "${e_pattern[i]}" == "${e_pattern[j]}" ]]; then
+        if [[ ${e_target[i]} -lt ${preset_count} && ${e_target[j]} -ge ${preset_count} ]]; then
+          die "the target ${e_file[i]} with the pattern '${e_pattern[i]}' is listed twice. Remove it from targets, since a preset in ecosystems already writes it."
+        fi
+        die "the target ${e_file[i]} with the pattern '${e_pattern[i]}' is listed twice. Keep one."
+      fi
+    done
+  done
+fi
 
 # Current version.
 case "${VERSION_SOURCE}" in
@@ -146,7 +238,7 @@ target)
   if [[ "$(wc -l <<<"${source_files}" | tr -d ' ')" -ne 1 ]]; then
     die "'${t_file[source_index]}' matches several files. The source target must name one file."
   fi
-  versions="$(perl "${LIB}/target.pl" find "${t_pattern[source_index]}" "${source_files}")"
+  versions="$(perl "${LIB}/target.pl" find "${t_pattern[source_index]}" "${source_files}" "${t_section[source_index]}")"
   count="$(grep -c . <<<"${versions}" || true)"
   if [[ "${count}" -ne 1 ]]; then
     die "${source_files}: the source pattern '${t_pattern[source_index]}' matches ${count} times. It must match once; anchor it with ^ and \$."
@@ -162,15 +254,66 @@ tag)
   ;;
 esac
 
-version="$(next_version "${current}" "${BUMP}" "${RELEASE_DATE}")"
+if [[ "${r_listed}" == "true" ]]; then
+  version="$(r_next_version "${current}" "${BUMP}")"
+else
+  version="$(next_version "${current}" "${BUMP}" "${RELEASE_DATE}")"
+fi
 major="$(version_major "${version}")"
 minor="$(version_minor "${version}")"
+
+# R development versions have four parts, and need no tag or release.
+r_development() {
+  [[ "${r_listed}" == "true" && "$1" =~ ^[0-9]+(\.[0-9]+){3}$ ]]
+}
 
 # Changelog.
 notes_file="$(temp_dir)/release-notes-${version}.md"
 : >"${notes_file}"
+
+# dev on a development version: nothing to write, and no command to run.
+if [[ "${BUMP}" == "dev" && "${version}" == "${current}" ]]; then
+  set_output version "${version}"
+  set_output previous "${current}"
+  set_output major "${major}"
+  set_output minor "${minor}"
+  set_output date "${RELEASE_DATE}"
+  set_output notes-file "${notes_file}"
+  set_multiline_output files ""
+  printf '%s is already a development version. Nothing to bump.\n' "${current}" >&2
+  exit 0
+fi
+
 heading="$(printf '%s' "${CHANGELOG_HEADING}" | FILL_version="${version}" FILL_date="${RELEASE_DATE}" fill_template version,date changelog-heading)"
-if [[ -n "${CHANGELOG}" ]]; then
+if [[ -n "${CHANGELOG}" && "${r_listed}" == "true" ]]; then
+  package="$(r_package DESCRIPTION)"
+  development="# ${package} (development version)"
+  heading="# ${package} ${version}"
+  if [[ ! -f "${CHANGELOG}" ]]; then
+    die "${CHANGELOG} does not exist. Create it with a '${development}' heading, or set changelog to an empty string."
+  fi
+  if [[ "${BUMP}" != "dev" ]]; then
+    r_news_pending "${CHANGELOG}" "${package}" ||
+      die "${CHANGELOG} does not start with the heading '${development}'. Add it above the last release, with the changes of this release under it."
+    status=0
+    r_news_section "${CHANGELOG}" "${package}" "(development version)" >"${notes_file}" || status=$?
+    case "${status}" in
+    0) ;;
+    3) die "${CHANGELOG} has more than one '${development}' heading. Keep the first one." ;;
+    *) die "could not read ${CHANGELOG}." ;;
+    esac
+    status=0
+    r_news_section "${CHANGELOG}" "${package}" "${version}" >/dev/null || status=$?
+    case "${status}" in
+    2) ;;
+    0 | 3) die "${CHANGELOG} already has the heading '${heading}'. If release ${TAG_PREFIX}${version} does not exist, a run bumped it and failed. ${unreleased_hint/\{version\}/${TAG_PREFIX}${version}}" ;;
+    *) die "could not read ${CHANGELOG}." ;;
+    esac
+    if [[ -z "$(tr -d '[:space:]' <"${notes_file}")" && "${ALLOW_EMPTY}" != "true" ]]; then
+      die "the development section of ${CHANGELOG} is empty. Add entries under '${development}', or set allow-empty: true."
+    fi
+  fi
+elif [[ -n "${CHANGELOG}" ]]; then
   if [[ ! -f "${CHANGELOG}" ]]; then
     die "${CHANGELOG} does not exist. Create it with a '## Unreleased' heading, or set changelog to an empty string."
   fi
@@ -195,12 +338,14 @@ if [[ -n "${CHANGELOG}" ]]; then
 fi
 
 # The release step checks this too, but only after the bump has landed.
-refuse_existing_release "${REPOSITORY}" "${TAG_PREFIX}${version}"
+if ! r_development "${version}"; then
+  refuse_existing_release "${REPOSITORY}" "${TAG_PREFIX}${version}"
+fi
 
 # Files that hold a version above the latest release hold a bump that a failed
 # run landed; bumping again would skip that version. The tags come from the API,
 # since a checkout holds none by default.
-if [[ "${VERSION_SOURCE}" == "target" ]]; then
+if [[ "${VERSION_SOURCE}" == "target" ]] && ! r_development "${current}"; then
   refs="$(gh api --paginate "repos/${REPOSITORY}/git/matching-refs/tags/${TAG_PREFIX}" --jq '.[].ref' 2>&1)" ||
     die "could not list the tags of ${REPOSITORY}: ${refs}. Check that the token can read ${REPOSITORY}."
   released="$(printf '%s\n' "${refs//refs\/tags\//}" | highest_version "${TAG_PREFIX}")"
@@ -213,9 +358,15 @@ fi
 # Writes.
 export VERSION="${version}" DATE="${RELEASE_DATE}" MAJOR="${major}"
 for ((i = 0; i < ${#e_file[@]}; i++)); do
-  perl "${LIB}/target.pl" replace "${e_pattern[i]}" "${e_file[i]}" >/dev/null
+  perl "${LIB}/target.pl" replace "${e_pattern[i]}" "${e_file[i]}" "${e_section[i]}" >/dev/null
 done
-if [[ -n "${CHANGELOG}" ]]; then
+if [[ -n "${CHANGELOG}" && "${r_listed}" == "true" ]]; then
+  if [[ "${BUMP}" == "dev" ]]; then
+    r_roll_news "${CHANGELOG}" "${package}" dev
+  else
+    r_roll_news "${CHANGELOG}" "${package}" "${version}"
+  fi
+elif [[ -n "${CHANGELOG}" ]]; then
   HEADING="${heading}" perl "${LIB}/section.pl" roll "${CHANGELOG}"
 fi
 # Prints each path that differs from HEAD, staged or not, with the hash of its
@@ -236,10 +387,17 @@ tree_state() {
 # Only what after-bump changes joins files: earlier steps of the job can leave
 # other changes in the tree.
 changed=""
-if [[ -n "${AFTER_BUMP}" ]]; then
+if [[ -n "${AFTER_BUMP}" || -n "${preset_commands}" ]]; then
   before="$(tree_state)" || die "could not read the state of the tree before after-bump."
-  bash -euo pipefail -c "${AFTER_BUMP}" ||
-    die "after-bump failed: ${AFTER_BUMP}. The version is written but nothing is committed; fix the command and dispatch again."
+  while IFS= read -r command; do
+    [[ -n "${command}" ]] || continue
+    bash -euo pipefail -c "${command}" ||
+      die "the command of an ecosystems preset failed: ${command}. The version is written but nothing is committed. Check the lock file and the network access of the runner, or remove the preset from ecosystems, then dispatch again."
+  done <<<"${preset_commands}"
+  if [[ -n "${AFTER_BUMP}" ]]; then
+    bash -euo pipefail -c "${AFTER_BUMP}" ||
+      die "after-bump failed: ${AFTER_BUMP}. The version is written but nothing is committed; fix the command and dispatch again."
+  fi
   after="$(tree_state)" || die "could not list the files that after-bump changed."
   changed="$(LC_ALL=C comm -13 <(printf '%s\n' "${before}") <(printf '%s\n' "${after}") | sed 's/ [^ ]*$//')"
 fi
