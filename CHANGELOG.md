@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 1.5.0 (2026-10-19)
+
 - feat: Add the `ecosystems` input to `bump`. It adds the targets and the lock file commands of the `citation`, `npm`, `cargo`, `typst` and `quarto-extension` presets. (#9)
 - feat: Add the `r` preset, with the `dev` bump type, R package versions and `NEWS.md`. `notes` also reads its section from `NEWS.md`. (#9)
 - feat: Add the `labels` and `assignees` inputs to `land`, for the pull request. (#9)
