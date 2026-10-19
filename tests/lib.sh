@@ -107,7 +107,10 @@ case "$*" in
   args="$*"
   tag="${args#api repos/o/r/commits/refs/tags/}"
   tag="${tag%% *}"
-  grep -qxF "${tag}" "${GH_TAGS}" || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+  if ! grep -qxF "${tag}" "${GH_TAGS}"; then
+    echo "gh: No commit found for SHA: refs/tags/${tag} (HTTP 422)" >&2
+    exit 1
+  fi
   echo "${GH_TAG_COMMIT}"
   ;;
 "api repos/o/r/commits/"*)
