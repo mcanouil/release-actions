@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 1.6.0 (2026-10-21)
+
 - feat: Write the version to `rproj.toml` with the `r` preset when the package has one, so rig sees the same version as `DESCRIPTION`. (#11)
 
 ## 1.5.1 (2026-10-19)
