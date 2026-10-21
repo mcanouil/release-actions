@@ -294,6 +294,7 @@ If the package has an `rproj.toml` file for rig, the preset also writes `version
 The line must have the form `version = "1.2.3"`, with double quotes.
 If `rproj.toml` has no such line under `[project]`, the step stops.
 The current version always comes from `DESCRIPTION`, so a different version in `rproj.toml` gets the new version too.
+A `dev` bump on a version of four parts writes no file, so a different version in `rproj.toml` stays until the next bump that writes.
 
 ### Current version and next version
 
