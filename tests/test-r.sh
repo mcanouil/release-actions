@@ -276,6 +276,51 @@ rm DESCRIPTION
 run_bump BUMP=minor ECOSYSTEMS=r
 refuses "no file matches 'DESCRIPTION'" "missing DESCRIPTION"
 
+# rproj.toml, the rig project file, gets the version of DESCRIPTION.
+rproj() {
+  cat >rproj.toml <<EOF
+[project]
+name = "NACHO"
+version = "$1"
+type = "package"
+
+[dependencies]
+R = ">= 4.3"
+
+[config.roxygen2]
+version = "8.1.0"
+EOF
+}
+printf 'v2.0.8\n' >"${GH_TAGS}"
+fixture
+rproj 2.0.8.9000
+run_bump BUMP=minor ECOSYSTEMS=r
+assert_status 0 "${STATUS}" "minor with rproj.toml: ${ERR}"
+assert_eq 'version = "2.1.0"' "$(sed -n 3p rproj.toml)" "rproj.toml version"
+assert_eq 'version = "8.1.0"' "$(sed -n 10p rproj.toml)" "rproj.toml other sections kept"
+assert_eq $'DESCRIPTION\nNEWS.md\nrproj.toml' "$(multiline_output files "${OUT}")" "files with rproj.toml"
+printf 'v2.0.8\nv2.1.0\n' >"${GH_TAGS}"
+released_fixture
+rproj 2.1.0
+run_bump BUMP=dev ECOSYSTEMS=r
+assert_status 0 "${STATUS}" "dev with rproj.toml: ${ERR}"
+assert_eq 'version = "2.1.0.9000"' "$(sed -n 3p rproj.toml)" "dev rproj.toml version"
+printf 'v2.0.8\n' >"${GH_TAGS}"
+fixture
+rproj 1.0.0
+run_bump BUMP=minor ECOSYSTEMS=r
+assert_status 0 "${STATUS}" "rproj.toml that drifted: ${ERR}"
+assert_eq "2.0.8.9000" "$(output_value previous "${OUT}")" "DESCRIPTION stays the source"
+assert_eq 'version = "2.1.0"' "$(sed -n 3p rproj.toml)" "rproj.toml drift fixed"
+fixture
+rproj 2.0.8.9000
+sed -i.bak '3d' rproj.toml && rm rproj.toml.bak
+before="$(tree_sum)"
+run_bump BUMP=minor ECOSYSTEMS=r
+refuses "rproj.toml: the r preset found no line that matches '^version = \"{version}\"\$' under [project]" "rproj.toml without a version"
+assert_contains "${ERR}" "Add a line such as 'version = \"X.Y.Z\"'" "rproj.toml without a version hint"
+assert_eq "${before}" "$(tree_sum)" "tree unchanged without an rproj.toml version"
+
 # The changelog input still picks the file, or turns the roll off.
 fixture
 mkdir inst

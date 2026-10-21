@@ -66,6 +66,10 @@ assert_eq $'- file: \'DESCRIPTION\'\n  pattern: \'^Version:\t{version}$\'' \
 printf 'Package: demo\nVersion:   1.2.3\n' >DESCRIPTION
 assert_eq "^Version:   {version}\$" "$(ecosystem_targets r | yq -r '.[0].pattern')" "r target keeps several spaces"
 rm DESCRIPTION
+: >rproj.toml
+assert_eq $'- file: \'DESCRIPTION\'\n  pattern: \'^Version: {version}$\'\n- file: \'rproj.toml\'\n  pattern: \'^version = "{version}"$\'\n  section: \'[project]\'' \
+  "$(ecosystem_targets r)" "r targets with rproj.toml"
+rm rproj.toml
 
 assert_eq $'- file: \'typst.toml\'\n  pattern: \'^version = "{version}"$\'' \
   "$(ecosystem_targets typst)" "typst target"
