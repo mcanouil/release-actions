@@ -233,7 +233,7 @@ An unknown name or a name given twice stops the step.
 | `cargo` | `version` under `[package]` in `Cargo.toml` | `cargo update --workspace --offline`, and online if that fails. |
 | `typst` | `version` in `typst.toml` | None. |
 | `quarto-extension` | `version` in `_extensions/*/_extension.yml` | None. |
-| `r` | `Version` in `DESCRIPTION`, with the spaces or tabs after `Version:` | None. See [The r preset](#the-r-preset). |
+| `r` | `Version` in `DESCRIPTION`, with the spaces or tabs after `Version:`, and `version` under `[project]` in `rproj.toml` when this file exists | None. See [The r preset](#the-r-preset). |
 
 ```yaml
 - name: Bump the version
@@ -289,6 +289,12 @@ It writes `Version` in `DESCRIPTION` and rolls `NEWS.md`.
 
 With `r`, a `changelog` that you leave at its default `CHANGELOG.md` means `NEWS.md`.
 Any other value is used as given, and an empty string turns off the roll.
+
+If the package has an `rproj.toml` file for rig, the preset also writes `version` under `[project]` in this file.
+The line must have the form `version = "1.2.3"`, with double quotes.
+If `rproj.toml` has no such line under `[project]`, the step stops.
+The current version always comes from `DESCRIPTION`, so a different version in `rproj.toml` gets the new version too.
+A `dev` bump on a version of four parts writes no file, so a different version in `rproj.toml` stays until the next bump that writes.
 
 ### Current version and next version
 

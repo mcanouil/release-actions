@@ -126,6 +126,10 @@ ecosystem_targets() {
       ;;
     r)
       ecosystem_item DESCRIPTION "$(ecosystem_r_pattern DESCRIPTION)"
+      # rig reads the version of a package from rproj.toml, when it has one.
+      if [[ -f rproj.toml ]]; then
+        ecosystem_item rproj.toml '^version = "{version}"$' '[project]'
+      fi
       ;;
     *) die "unknown ecosystem '${name}'. Use ${ECOSYSTEM_LIST}." ;;
     esac

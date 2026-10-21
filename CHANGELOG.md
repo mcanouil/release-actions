@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- feat: Write the version to `rproj.toml` with the `r` preset when the package has one, so rig sees the same version as `DESCRIPTION`. (#11)
+
 ## 1.5.1 (2026-10-19)
 
 - fix: Stop `bump` when `ecosystems` names a preset twice, and name the preset when its lock file command fails. (#10)
