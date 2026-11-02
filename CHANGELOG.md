@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 1.7.0 (2026-11-02)
+
 - feat: Make the commit of a `land` push through the GitHub API, so GitHub signs it and it shows as verified. The commit uses the token that `actions/checkout` keeps, and a push now stops when `HEAD` is not the branch tip or when a file is not a regular file. (#12)
 
 ## 1.6.0 (2026-10-21)
