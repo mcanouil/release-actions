@@ -59,6 +59,9 @@ refuses() {
 # For pull requests: GH_STALE_PR is the open pull request of the head branch,
 # as "<number> <url>",
 # GH_LABELS a file of label names, GH_LABELS_DOWN fails gh label list,
+# GH_COMMIT_FAILS fails the createCommitOnBranch call, which otherwise commits
+# on the branch of GH_ORIGIN as app[bot], saves its input in GH_COMMIT_INPUT,
+# and saves its token in GH_COMMIT_TOKEN,
 # GH_PR_FAILS fails gh pr create and gh pr edit,
 # GH_MERGE_FAILS fails gh pr merge, and each
 # gh pr view prints the next line of the file GH_PR_SCRIPT, repeating the last
@@ -179,6 +182,40 @@ case "$*" in
     exit 1
   fi
   ;;
+"api graphql --input "*)
+  if [[ -n "${GH_COMMIT_FAILS:-}" ]]; then
+    echo "gh: Resource not accessible by integration" >&2
+    exit 1
+  fi
+  input="$(jq -c .variables.input "$4")"
+  [[ -z "${GH_COMMIT_INPUT:-}" ]] || printf '%s\n' "${input}" >"${GH_COMMIT_INPUT}"
+  [[ -z "${GH_COMMIT_TOKEN:-}" ]] || printf '%s\n' "${GH_TOKEN:-}" >"${GH_COMMIT_TOKEN}"
+  branch="$(jq -r .branch.branchName <<<"${input}")"
+  expected="$(jq -r .expectedHeadOid <<<"${input}")"
+  export GIT_DIR="${GH_ORIGIN}" GIT_INDEX_FILE="${GH_ORIGIN}/fake-gh-index"
+  head="$(git rev-parse "refs/heads/${branch}")"
+  if [[ "${head}" != "${expected}" ]]; then
+    echo "gh: Expected branch to point to \"${expected}\" but it did not. Pull and try again." >&2
+    exit 1
+  fi
+  git read-tree "${head}"
+  while IFS=$'\t' read -r path contents; do
+    blob="$(printf '%s' "${contents}" | base64 -d | git hash-object -w --stdin)"
+    git update-index --add --cacheinfo "100644,${blob},${path}"
+  done < <(jq -r '.fileChanges.additions // [] | .[] | [.path, .contents] | @tsv' <<<"${input}")
+  while IFS= read -r path; do
+    printf '0 %040d\t%s\n' 0 "${path}" | git update-index --index-info
+  done < <(jq -r '.fileChanges.deletions // [] | .[].path' <<<"${input}")
+  message="$(jq -r .message.headline <<<"${input}")"
+  body="$(jq -r '.message.body // ""' <<<"${input}")"
+  [[ -z "${body}" ]] || message="${message}"$'\n\n'"${body}"
+  commit="$(GIT_AUTHOR_NAME='app[bot]' GIT_AUTHOR_EMAIL='app@example.com' \
+    GIT_COMMITTER_NAME=GitHub GIT_COMMITTER_EMAIL=noreply@github.com \
+    git commit-tree "$(git write-tree)" -p "${head}" -m "${message}")"
+  git update-ref "refs/heads/${branch}" "${commit}" "${head}"
+  rm -f "${GIT_INDEX_FILE}"
+  echo "${commit}"
+  ;;
 "label list"*)
   if [[ -n "${GH_LABELS_DOWN:-}" ]]; then
     echo "HTTP 403: Resource not accessible by integration" >&2
@@ -220,7 +257,7 @@ path_without() {
   local dir="${SCRATCH}/no-$1" name found
   if [[ ! -d "${dir}" ]]; then
     mkdir -p "${dir}"
-    for name in awk bash basename cat cksum comm cut date dirname env find gh git grep head jq ln \
+    for name in awk base64 bash basename cat cksum comm cut date dirname env find gh git grep head jq ln \
       mkdir mktemp mv perl rm sed sort tail tr uname wc yq; do
       [[ "${name}" != "$1" ]] || continue
       found="$(command -v "${name}")" || continue

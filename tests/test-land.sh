@@ -103,20 +103,60 @@ if git symbolic-ref -q HEAD >/dev/null; then
   printf '  push: HEAD is not detached\n' >&2
   exit 1
 fi
-assert_eq "test" "$(git -C "${GH_ORIGIN}" log -1 --format=%an main)" "push keeps the identity"
+# GitHub makes, and signs, the commit of a push.
+assert_eq "app[bot]" "$(git -C "${GH_ORIGIN}" log -1 --format=%an main)" "push commits through the API"
+assert_eq "version: 1.5.0" "$(git -C "${GH_ORIGIN}" show main:CITATION.cff)" "push content"
+assert_eq "" "$(git status --porcelain)" "push leaves a clean tree"
 
-fixture anonymous
+fixture
+export GH_COMMIT_INPUT="${SCRATCH}/commit-input.json"
+base="$(origin_main)"
+mkdir -p docs
+printf 'new\n' >docs/new.txt
+rm CITATION.cff
+run_land VERSION= MESSAGE='ci: move files' FILES=$'CITATION.cff\ndocs'
+assert_status 0 "${STATUS}" "push of an addition and a deletion: ${ERR}"
+assert_eq "o/r main ${base}" "$(jq -r '"\(.branch.repositoryNameWithOwner) \(.branch.branchName) \(.expectedHeadOid)"' "${GH_COMMIT_INPUT}")" "push branch and head"
+assert_eq "docs/new.txt" "$(git -C "${GH_ORIGIN}" ls-tree -r --name-only main)" "push adds and deletes"
+assert_eq "new" "$(git -C "${GH_ORIGIN}" show main:docs/new.txt)" "push content of an addition"
+unset GH_COMMIT_INPUT
+
+# A push commits with the token that actions/checkout keeps, else with the token input.
+fixture
+export GH_COMMIT_TOKEN="${SCRATCH}/commit-token"
 run_land
-assert_status 0 "${STATUS}" "anonymous push: ${ERR}"
-assert_eq "github-actions[bot]" "$(git -C "${GH_ORIGIN}" log -1 --format=%an main)" "anonymous author"
-assert_eq "41898282+github-actions[bot]@users.noreply.github.com" \
-  "$(git -C "${GH_ORIGIN}" log -1 --format=%ae main)" "anonymous email"
+assert_status 0 "${STATUS}" "push without checkout credentials: ${ERR}"
+assert_eq "t" "$(cat "${GH_COMMIT_TOKEN}")" "push falls back to the token input"
+fixture
+credentials="${SCRATCH}/checkout-credentials.config"
+git config -f "${credentials}" http.https://github.com/.extraheader \
+  "AUTHORIZATION: basic $(printf 'x-access-token:app-token' | base64)"
+git config "includeIf.gitdir:$(git rev-parse --absolute-git-dir).path" "${credentials}"
+run_land
+assert_status 0 "${STATUS}" "push with checkout credentials: ${ERR}"
+assert_eq "app-token" "$(cat "${GH_COMMIT_TOKEN}")" "push uses the checkout token"
+unset GH_COMMIT_TOKEN
+
+fixture
+chmod +x CITATION.cff
+run_land
+refuses_landing "mode 100755" "executable file"
+assert_contains "${ERR}" "pull-request" "executable file hint"
 
 fixture
 seed_commit --allow-empty -m moved
 run_land
 refuses "bypass list" "push refused"
 assert_contains "${ERR}" "pull-request" "push refused hint"
+assert_contains "${ERR}" "Expected branch to point to" "push refused cause"
+
+fixture
+run_land GH_COMMIT_FAILS=1
+refuses_landing "Resource not accessible by integration" "commit refused"
+
+fixture
+run_land PATH="$(path_without jq)"
+refuses_landing "jq" "push without jq"
 
 # Writes the answers of the fake gh pr view, one per argument, in order.
 pr_script() {
@@ -211,7 +251,7 @@ fixture
 run_land LABELS=ci ASSIGNEES=mcanouil
 assert_status 0 "${STATUS}" "push with labels: ${ERR}"
 assert_contains "${ERR}" "labels and assignees only apply to a pull request" "push notice"
-assert_eq "" "$(cat "${GH_LOG}")" "push makes no gh call"
+assert_eq "api graphql" "$(cut -d' ' -f1-2 "${GH_LOG}")" "push makes one gh call"
 
 fixture
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
@@ -517,13 +557,15 @@ run_land GITHUB_REF_NAME=feature
 refuses_landing "a release lands on main, and this run is on feature" "release off the default branch"
 run_land GITHUB_EVENT_PATH= GITHUB_REF_NAME=feature
 refuses_landing "a release lands on main, and this run is on feature" "default branch from the API"
+git push -q origin main:feature
 run_land GITHUB_REF_NAME=feature VERSION= MESSAGE='ci: refresh goldens'
 assert_status 0 "${STATUS}" "change off the default branch: ${ERR}"
 assert_eq "ci: refresh goldens" "$(git -C "${GH_ORIGIN}" log -1 --format=%s feature)" "change pushed to feature"
 
 # Without jq, the default branch comes from the API.
 fixture
-run_land PATH="$(path_without jq)"
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr PATH="$(path_without jq)"
 assert_status 0 "${STATUS}" "release without jq: ${ERR}"
 assert_contains "$(cat "${GH_LOG}")" "api repos/o/r --jq .default_branch" "API fallback without jq"
 
