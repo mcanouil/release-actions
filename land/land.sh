@@ -62,8 +62,29 @@ require_bool wait "${WAIT}"
 require_bool allow-unchanged "${ALLOW_UNCHANGED}"
 require_tools gh
 [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
+# Sets GH_TOKEN to the token that actions/checkout keeps in the git config, so
+# that the checkout token decides in both modes. When the checkout keeps none,
+# git reads origin with the token input, through the environment so that the
+# token stays out of the process list.
+use_checkout_token() {
+  local key header token
+  key="http.${GITHUB_SERVER_URL:-https://github.com}/.extraheader"
+  header="$(git config --get "${key}" || true)"
+  if [[ "${header}" == "AUTHORIZATION: basic "* ]] &&
+    token="$(printf '%s' "${header#AUTHORIZATION: basic }" | base64 -d 2>/dev/null)" &&
+    [[ "${token}" == "x-access-token:"?* ]]; then
+    export GH_TOKEN="${token#x-access-token:}"
+  else
+    local count="${GIT_CONFIG_COUNT:-0}"
+    export "GIT_CONFIG_KEY_${count}=${key}"
+    export "GIT_CONFIG_VALUE_${count}=AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN:-}" | base64 | tr -d '\n')"
+    export GIT_CONFIG_COUNT=$((count + 1))
+  fi
+}
+
 if [[ "${MODE}" == "push" ]]; then
   require_tools jq base64
+  use_checkout_token
 fi
 if [[ "${MODE}" == "pull-request" ]]; then
   if [[ -z "${PR_BRANCH}" && -z "${VERSION}" ]]; then
@@ -224,30 +245,10 @@ if [[ "${MODE}" == "pull-request" ]]; then
     die "labels lists $(join_list "${missing[@]}"), which ${REPOSITORY} does not have. Create them in the repository, or remove them from labels."
 fi
 
-# Sets GH_TOKEN to the token that actions/checkout keeps in the git config, so
-# that the checkout token decides in both modes. When the checkout keeps none,
-# git reads origin with the token input, through the environment so that the
-# token stays out of the process list.
-use_checkout_token() {
-  local key header token
-  key="http.${GITHUB_SERVER_URL:-https://github.com}/.extraheader"
-  header="$(git config --get "${key}" || true)"
-  if [[ "${header}" == "AUTHORIZATION: basic "* ]] &&
-    token="$(printf '%s' "${header#AUTHORIZATION: basic }" | base64 -d 2>/dev/null)" &&
-    [[ "${token}" == "x-access-token:"?* ]]; then
-    export GH_TOKEN="${token#x-access-token:}"
-  else
-    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="${key}"
-    GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN:-}" | base64 | tr -d '\n')"
-    export GIT_CONFIG_VALUE_0
-  fi
-}
-
 # GitHub makes the commit of a push through the API, and signs it, so that it
 # shows as verified. The API sets no file mode, so only regular files land.
 land_push() {
   local head remote work changes meta path old new headline body sha error
-  use_checkout_token
   head="$(git rev-parse HEAD)"
   remote="$(git ls-remote origin "refs/heads/${BRANCH}")" ||
     die "could not read ${BRANCH} on origin. Check that the token can read the repository."
@@ -256,6 +257,9 @@ land_push() {
   [[ "${remote}" == "${head}" ]] ||
     die "HEAD is not the tip of ${BRANCH} on origin. If ${BRANCH} moved, dispatch the workflow again. A push lands the files only, not local commits: use mode: pull-request to land local commits."
   work="$(mktemp -d "$(temp_dir)/land-push.XXXXXX")"
+  # land_push runs in a subshell, so this trap removes the copies on every exit.
+  # shellcheck disable=SC2064 # The path is expanded now, as work is local and gone at exit.
+  trap "rm -rf $(printf '%q' "${work}")" EXIT
   changes="${work}/changes"
   : >"${changes}"
   while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
@@ -270,7 +274,9 @@ land_push() {
       ;;
     *)
       read -r old new _ <<<"${meta#:}"
-      [[ "${new}" != 100644 ]] || new="${old}"
+      if [[ "${new}" == 100644 ]]; then
+        die "${path} changes mode from ${old} to ${new}, and a push cannot change a file mode. Use mode: pull-request for it."
+      fi
       die "${path} has mode ${new}, and a push lands regular files only. Use mode: pull-request for it."
       ;;
     esac
@@ -301,7 +307,6 @@ land_push() {
     die "the token could not commit to ${BRANCH}: ${error%.}. If ${BRANCH} moved, dispatch the workflow again. Otherwise add the App to the bypass list of the branch ruleset, or use mode: pull-request."
   fi
   [[ -n "${sha}" ]] || die "GitHub returned no commit for ${BRANCH}. Check ${BRANCH} before you dispatch the workflow again."
-  rm -rf "${work}"
   git fetch -q origin "${sha}" || die_landed "could not fetch the commit ${sha}."
   printf '%s\n' "${sha}"
 }

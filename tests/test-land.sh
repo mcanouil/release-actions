@@ -119,6 +119,13 @@ assert_status 0 "${STATUS}" "push of an addition and a deletion: ${ERR}"
 assert_eq "o/r main ${base}" "$(jq -r '"\(.branch.repositoryNameWithOwner) \(.branch.branchName) \(.expectedHeadOid)"' "${GH_COMMIT_INPUT}")" "push branch and head"
 assert_eq "docs/new.txt" "$(git -C "${GH_ORIGIN}" ls-tree -r --name-only main)" "push adds and deletes"
 assert_eq "new" "$(git -C "${GH_ORIGIN}" show main:docs/new.txt)" "push content of an addition"
+
+fixture
+printf 'title: %s\n' "$(printf 'x%.0s' {1..200})" >CITATION.cff
+run_land
+assert_status 0 "${STATUS}" "push of a long file: ${ERR}"
+assert_eq 1 "$(jq -r '.fileChanges.additions[0].contents' "${GH_COMMIT_INPUT}" | wc -l | tr -d ' ')" \
+  "push sends the contents on one line"
 unset GH_COMMIT_INPUT
 
 # A push commits with the token that actions/checkout keeps, else with the token input.
@@ -129,6 +136,10 @@ assert_status 0 "${STATUS}" "push without checkout credentials: ${ERR}"
 assert_eq "t" "$(sed -n 1p "${GH_COMMIT_TOKEN}")" "push falls back to the token input"
 assert_eq "AUTHORIZATION: basic $(printf 'x-access-token:t' | base64)" "$(sed -n 2p "${GH_COMMIT_TOKEN}")" \
   "git reads origin with the token input"
+fixture
+run_land GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.quotePath GIT_CONFIG_VALUE_0=false
+assert_status 0 "${STATUS}" "push with inherited git config: ${ERR}"
+assert_eq "false" "$(sed -n 2p "${GH_COMMIT_TOKEN}")" "push keeps the inherited git config"
 fixture
 credentials="${SCRATCH}/checkout-credentials.config"
 git config -f "${credentials}" http.https://github.com/.extraheader \
@@ -154,7 +165,7 @@ git checkout -q -- CITATION.cff
 git pull -q
 chmod -x CITATION.cff
 run_land
-refuses_landing "mode 100755" "file that loses its executable bit"
+refuses_landing "changes mode from 100755 to 100644" "file that loses its executable bit"
 
 fixture
 ln -s CITATION.cff "${SCRATCH}/seed/latest.cff"
@@ -165,7 +176,7 @@ git pull -q
 rm latest.cff
 printf 'file\n' >latest.cff
 run_land FILES=latest.cff VERSION= MESSAGE='ci: x'
-refuses_landing "mode 120000" "symbolic link replaced by a file"
+refuses_landing "changes mode from 120000 to 100644" "symbolic link replaced by a file"
 
 fixture
 run_land GITHUB_REF_NAME=feature VERSION= MESSAGE='ci: x'
