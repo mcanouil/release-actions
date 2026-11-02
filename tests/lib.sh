@@ -206,9 +206,7 @@ case "$*" in
   while IFS= read -r path; do
     printf '0 %040d\t%s\n' 0 "${path}" | git update-index --index-info
   done < <(jq -r '.fileChanges.deletions // [] | .[].path' <<<"${input}")
-  message="$(jq -r .message.headline <<<"${input}")"
-  body="$(jq -r '.message.body // ""' <<<"${input}")"
-  [[ -z "${body}" ]] || message="${message}"$'\n\n'"${body}"
+  message="$(jq -r '[.message.headline, .message.body // empty] | join("\n\n")' <<<"${input}")"
   commit="$(GIT_AUTHOR_NAME='app[bot]' GIT_AUTHOR_EMAIL='app@example.com' \
     GIT_COMMITTER_NAME=GitHub GIT_COMMITTER_EMAIL=noreply@github.com \
     git commit-tree "$(git write-tree)" -p "${head}" -m "${message}")"

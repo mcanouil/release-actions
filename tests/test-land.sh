@@ -176,6 +176,15 @@ branch_sha() {
   git -C "${GH_ORIGIN}" rev-parse "refs/heads/${GH_HEAD_BRANCH:-release/v1.5.0}"
 }
 
+# Without a git identity, the commit of a pull request is by github-actions[bot].
+fixture anonymous
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr
+assert_status 0 "${STATUS}" "anonymous pull request: ${ERR}"
+assert_eq "github-actions[bot]" "$(git -C "${GH_ORIGIN}" log -1 --format=%an release/v1.5.0)" "anonymous author"
+assert_eq "41898282+github-actions[bot]@users.noreply.github.com" \
+  "$(git -C "${GH_ORIGIN}" log -1 --format=%ae release/v1.5.0)" "anonymous email"
+
 assert_detached_at() {
   assert_eq "$1" "$(output_value sha "${OUT}")" "$2 sha"
   assert_eq "$1" "$(git rev-parse HEAD)" "$2 HEAD"

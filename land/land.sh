@@ -243,7 +243,7 @@ checkout_token() {
 land_push() {
   local head work changes meta path headline body sha error token
   head="$(git rev-parse HEAD)"
-  work="$(mktemp -d)"
+  work="$(mktemp -d "$(temp_dir)/land-push.XXXXXX")"
   changes="${work}/changes"
   : >"${changes}"
   while IFS= read -r -d '' meta && IFS= read -r -d '' path; do

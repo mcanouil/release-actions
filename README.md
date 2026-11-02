@@ -464,8 +464,8 @@ The next steps, for example a build, use the landed files.
 | `changed` | `true` when the files had a change, else `false`. |
 | `pull-request` | URL of the pull request, in `pull-request` mode. |
 
-`land` uses the token that `actions/checkout` keeps, in both modes.
-Thus the token of the checkout decides if GitHub accepts the commit.
+`land` uses the token that `actions/checkout` keeps for the commit of a push, and for the push of a pull request branch.
+Thus the token of the checkout decides if GitHub accepts the change.
 Give the same token to `actions/checkout` and to `land`.
 
 `land` commits only the paths in `files`, even if an earlier step staged other files.
