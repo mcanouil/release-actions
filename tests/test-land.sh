@@ -103,20 +103,105 @@ if git symbolic-ref -q HEAD >/dev/null; then
   printf '  push: HEAD is not detached\n' >&2
   exit 1
 fi
-assert_eq "test" "$(git -C "${GH_ORIGIN}" log -1 --format=%an main)" "push keeps the identity"
+# GitHub makes, and signs, the commit of a push.
+assert_eq "app[bot]" "$(git -C "${GH_ORIGIN}" log -1 --format=%an main)" "push commits through the API"
+assert_eq "version: 1.5.0" "$(git -C "${GH_ORIGIN}" show main:CITATION.cff)" "push content"
+assert_eq "" "$(git status --porcelain)" "push leaves a clean tree"
 
-fixture anonymous
+fixture
+export GH_COMMIT_INPUT="${SCRATCH}/commit-input.json"
+base="$(origin_main)"
+mkdir -p docs
+printf 'new\n' >docs/new.txt
+rm CITATION.cff
+run_land VERSION= MESSAGE='ci: move files' FILES=$'CITATION.cff\ndocs'
+assert_status 0 "${STATUS}" "push of an addition and a deletion: ${ERR}"
+assert_eq "o/r main ${base}" "$(jq -r '"\(.branch.repositoryNameWithOwner) \(.branch.branchName) \(.expectedHeadOid)"' "${GH_COMMIT_INPUT}")" "push branch and head"
+assert_eq "docs/new.txt" "$(git -C "${GH_ORIGIN}" ls-tree -r --name-only main)" "push adds and deletes"
+assert_eq "new" "$(git -C "${GH_ORIGIN}" show main:docs/new.txt)" "push content of an addition"
+
+fixture
+printf 'title: %s\n' "$(printf 'x%.0s' {1..200})" >CITATION.cff
 run_land
-assert_status 0 "${STATUS}" "anonymous push: ${ERR}"
-assert_eq "github-actions[bot]" "$(git -C "${GH_ORIGIN}" log -1 --format=%an main)" "anonymous author"
-assert_eq "41898282+github-actions[bot]@users.noreply.github.com" \
-  "$(git -C "${GH_ORIGIN}" log -1 --format=%ae main)" "anonymous email"
+assert_status 0 "${STATUS}" "push of a long file: ${ERR}"
+assert_eq 1 "$(jq -r '.fileChanges.additions[0].contents' "${GH_COMMIT_INPUT}" | wc -l | tr -d ' ')" \
+  "push sends the contents on one line"
+unset GH_COMMIT_INPUT
+
+# A push commits with the token that actions/checkout keeps, else with the token input.
+fixture
+export GH_COMMIT_TOKEN="${SCRATCH}/commit-token"
+run_land
+assert_status 0 "${STATUS}" "push without checkout credentials: ${ERR}"
+assert_eq "t" "$(sed -n 1p "${GH_COMMIT_TOKEN}")" "push falls back to the token input"
+assert_eq "AUTHORIZATION: basic $(printf 'x-access-token:t' | base64)" "$(sed -n 2p "${GH_COMMIT_TOKEN}")" \
+  "git reads origin with the token input"
+fixture
+run_land GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.quotePath GIT_CONFIG_VALUE_0=false
+assert_status 0 "${STATUS}" "push with inherited git config: ${ERR}"
+assert_eq "false" "$(sed -n 2p "${GH_COMMIT_TOKEN}")" "push keeps the inherited git config"
+fixture
+credentials="${SCRATCH}/checkout-credentials.config"
+git config -f "${credentials}" http.https://github.com/.extraheader \
+  "AUTHORIZATION: basic $(printf 'x-access-token:app-token' | base64)"
+git config "includeIf.gitdir:$(git rev-parse --absolute-git-dir).path" "${credentials}"
+run_land
+assert_status 0 "${STATUS}" "push with checkout credentials: ${ERR}"
+assert_eq "app-token" "$(sed -n 1p "${GH_COMMIT_TOKEN}")" "push uses the checkout token"
+assert_eq "" "$(sed -n 2p "${GH_COMMIT_TOKEN}")" "git keeps the checkout credentials"
+unset GH_COMMIT_TOKEN
+
+fixture
+chmod +x CITATION.cff
+run_land
+refuses_landing "mode 100755" "executable file"
+assert_contains "${ERR}" "pull-request" "executable file hint"
+
+fixture
+chmod +x "${SCRATCH}/seed/CITATION.cff"
+git -C "${SCRATCH}/seed" add CITATION.cff
+seed_commit -m executable
+git checkout -q -- CITATION.cff
+git pull -q
+chmod -x CITATION.cff
+run_land
+refuses_landing "changes mode from 100755 to 100644" "file that loses its executable bit"
+
+fixture
+ln -s CITATION.cff "${SCRATCH}/seed/latest.cff"
+git -C "${SCRATCH}/seed" add latest.cff
+seed_commit -m link
+git checkout -q -- CITATION.cff
+git pull -q
+rm latest.cff
+printf 'file\n' >latest.cff
+run_land FILES=latest.cff VERSION= MESSAGE='ci: x'
+refuses_landing "changes mode from 120000 to 100644" "symbolic link replaced by a file"
+
+fixture
+run_land GITHUB_REF_NAME=feature VERSION= MESSAGE='ci: x'
+refuses_landing "origin has no branch feature" "push to a missing branch"
 
 fixture
 seed_commit --allow-empty -m moved
 run_land
-refuses "bypass list" "push refused"
-assert_contains "${ERR}" "pull-request" "push refused hint"
+refuses "is not the tip of main on origin" "push after main moved"
+assert_contains "${ERR}" "dispatch the workflow again" "push after main moved hint"
+
+fixture
+git commit -q --allow-empty -m local
+run_land
+refuses "is not the tip of main on origin" "push with a local commit"
+assert_contains "${ERR}" "local commits" "push with a local commit hint"
+assert_eq "init" "$(git -C "${GH_ORIGIN}" log -1 --format=%s main)" "push with a local commit adds no commit"
+
+fixture
+run_land GH_COMMIT_FAILS=1
+refuses_landing "Resource not accessible by integration" "commit refused"
+
+fixture
+run_land PATH="$(path_without jq)"
+refuses_landing "jq" "push without jq"
 
 # Writes the answers of the fake gh pr view, one per argument, in order.
 pr_script() {
@@ -135,6 +220,15 @@ run_pr() {
 branch_sha() {
   git -C "${GH_ORIGIN}" rev-parse "refs/heads/${GH_HEAD_BRANCH:-release/v1.5.0}"
 }
+
+# Without a git identity, the commit of a pull request is by github-actions[bot].
+fixture anonymous
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr
+assert_status 0 "${STATUS}" "anonymous pull request: ${ERR}"
+assert_eq "github-actions[bot]" "$(git -C "${GH_ORIGIN}" log -1 --format=%an release/v1.5.0)" "anonymous author"
+assert_eq "41898282+github-actions[bot]@users.noreply.github.com" \
+  "$(git -C "${GH_ORIGIN}" log -1 --format=%ae release/v1.5.0)" "anonymous email"
 
 assert_detached_at() {
   assert_eq "$1" "$(output_value sha "${OUT}")" "$2 sha"
@@ -211,7 +305,7 @@ fixture
 run_land LABELS=ci ASSIGNEES=mcanouil
 assert_status 0 "${STATUS}" "push with labels: ${ERR}"
 assert_contains "${ERR}" "labels and assignees only apply to a pull request" "push notice"
-assert_eq "" "$(cat "${GH_LOG}")" "push makes no gh call"
+assert_eq "api graphql" "$(cut -d' ' -f1-2 "${GH_LOG}")" "push makes one gh call"
 
 fixture
 pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
@@ -345,6 +439,12 @@ fixture
 run_land VERSION= MESSAGE="${message}"
 assert_status 0 "${STATUS}" "custom push message: ${ERR}"
 assert_eq "${message}" "$(git -C "${GH_ORIGIN}" log -1 --format=%B main | sed '$d')" "custom push message verbatim"
+
+fixture
+run_land VERSION= MESSAGE=$'ci: refresh goldens\nBy the nightly run.'
+assert_status 0 "${STATUS}" "push message with no blank line: ${ERR}"
+assert_eq $'ci: refresh goldens\n\nBy the nightly run.' "$(git -C "${GH_ORIGIN}" log -1 --format=%B main | sed '$d')" \
+  "push puts a blank line after the first line"
 
 fixture
 export GH_HEAD_BRANCH=ci/update-thumbs
@@ -517,13 +617,15 @@ run_land GITHUB_REF_NAME=feature
 refuses_landing "a release lands on main, and this run is on feature" "release off the default branch"
 run_land GITHUB_EVENT_PATH= GITHUB_REF_NAME=feature
 refuses_landing "a release lands on main, and this run is on feature" "default branch from the API"
+git push -q origin main:feature
 run_land GITHUB_REF_NAME=feature VERSION= MESSAGE='ci: refresh goldens'
 assert_status 0 "${STATUS}" "change off the default branch: ${ERR}"
 assert_eq "ci: refresh goldens" "$(git -C "${GH_ORIGIN}" log -1 --format=%s feature)" "change pushed to feature"
 
 # Without jq, the default branch comes from the API.
 fixture
-run_land PATH="$(path_without jq)"
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr PATH="$(path_without jq)"
 assert_status 0 "${STATUS}" "release without jq: ${ERR}"
 assert_contains "$(cat "${GH_LOG}")" "api repos/o/r --jq .default_branch" "API fallback without jq"
 

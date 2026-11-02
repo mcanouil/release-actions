@@ -60,9 +60,33 @@ squash | merge) ;;
 esac
 require_bool wait "${WAIT}"
 require_bool allow-unchanged "${ALLOW_UNCHANGED}"
+require_tools gh
+[[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
+# Sets GH_TOKEN to the token that actions/checkout keeps in the git config, so
+# that the checkout token decides in both modes. When the checkout keeps none,
+# git reads origin with the token input, through the environment so that the
+# token stays out of the process list.
+use_checkout_token() {
+  local key header token
+  key="http.${GITHUB_SERVER_URL:-https://github.com}/.extraheader"
+  header="$(git config --get "${key}" || true)"
+  if [[ "${header}" == "AUTHORIZATION: basic "* ]] &&
+    token="$(printf '%s' "${header#AUTHORIZATION: basic }" | base64 -d 2>/dev/null)" &&
+    [[ "${token}" == "x-access-token:"?* ]]; then
+    export GH_TOKEN="${token#x-access-token:}"
+  else
+    local count="${GIT_CONFIG_COUNT:-0}"
+    export "GIT_CONFIG_KEY_${count}=${key}"
+    export "GIT_CONFIG_VALUE_${count}=AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN:-}" | base64 | tr -d '\n')"
+    export GIT_CONFIG_COUNT=$((count + 1))
+  fi
+}
+
+if [[ "${MODE}" == "push" ]]; then
+  require_tools jq base64
+  use_checkout_token
+fi
 if [[ "${MODE}" == "pull-request" ]]; then
-  require_tools gh
-  [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
   if [[ -z "${PR_BRANCH}" && -z "${VERSION}" ]]; then
     die "branch is empty and there is no version. Pass the head branch of the pull request."
   fi
@@ -134,8 +158,6 @@ if [[ -n "${VERSION}" ]]; then
       die "could not read ${GITHUB_EVENT_PATH}, the event payload of the run."
   fi
   if [[ -z "${default_branch}" ]]; then
-    require_tools gh
-    [[ -n "${REPOSITORY}" ]] || die "GITHUB_REPOSITORY is not set."
     default_branch="$(gh api "repos/${REPOSITORY}" --jq .default_branch)" ||
       die "could not read the default branch of ${REPOSITORY}. Check that the token can read it."
   fi
@@ -183,7 +205,8 @@ if [[ -n "${BASE}" ]]; then
     die "HEAD does not build on ${BASE}. Check out ${BASE} before land, for example with the ref input of actions/checkout."
 fi
 
-if [[ -z "$(git config user.name || true)" || -z "$(git config user.email || true)" ]]; then
+if [[ "${MODE}" == "pull-request" ]] &&
+  [[ -z "$(git config user.name || true)" || -z "$(git config user.email || true)" ]]; then
   git config user.name 'github-actions[bot]'
   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 fi
@@ -222,12 +245,70 @@ if [[ "${MODE}" == "pull-request" ]]; then
     die "labels lists $(join_list "${missing[@]}"), which ${REPOSITORY} does not have. Create them in the repository, or remove them from labels."
 fi
 
+# GitHub makes the commit of a push through the API, and signs it, so that it
+# shows as verified. The API sets no file mode, so only regular files land.
 land_push() {
-  git commit -q -m "${push_message}" -- "${files[@]}" ||
-    die "could not commit ${files[*]}. Check the git setup of the job, such as commit signing."
-  git push -q origin "HEAD:refs/heads/${BRANCH}" ||
-    die "the token could not push to ${BRANCH}. If ${BRANCH} moved, dispatch the workflow again. Otherwise add the App to the bypass list of the branch ruleset, or use mode: pull-request."
-  git rev-parse HEAD
+  local head remote work changes meta path old new headline body sha error
+  head="$(git rev-parse HEAD)"
+  remote="$(git ls-remote origin "refs/heads/${BRANCH}")" ||
+    die "could not read ${BRANCH} on origin. Check that the token can read the repository."
+  remote="${remote%%[[:space:]]*}"
+  [[ -n "${remote}" ]] || die "origin has no branch ${BRANCH}. A push lands on an existing branch only: create ${BRANCH} first."
+  [[ "${remote}" == "${head}" ]] ||
+    die "HEAD is not the tip of ${BRANCH} on origin. If ${BRANCH} moved, dispatch the workflow again. A push lands the files only, not local commits: use mode: pull-request to land local commits."
+  work="$(mktemp -d "$(temp_dir)/land-push.XXXXXX")"
+  # land_push runs in a subshell, so this trap removes the copies on every exit.
+  # shellcheck disable=SC2064 # The path is expanded now, as work is local and gone at exit.
+  trap "rm -rf $(printf '%q' "${work}")" EXIT
+  changes="${work}/changes"
+  : >"${changes}"
+  while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
+    case "${meta}" in
+    *" D")
+      jq -nc --arg path "${path}" '{deletion: {path: $path}}' >>"${changes}"
+      ;;
+    ":100644 100644 "* | ":000000 100644 "*)
+      git cat-file blob ":${path}" | base64 | tr -d '\n' >"${work}/contents"
+      jq -nc --arg path "${path}" --rawfile contents "${work}/contents" \
+        '{addition: {path: $path, contents: $contents}}' >>"${changes}"
+      ;;
+    *)
+      read -r old new _ <<<"${meta#:}"
+      if [[ "${new}" == 100644 ]]; then
+        die "${path} changes mode from ${old} to ${new}, and a push cannot change a file mode. Use mode: pull-request for it."
+      fi
+      die "${path} has mode ${new}, and a push lands regular files only. Use mode: pull-request for it."
+      ;;
+    esac
+  done < <(git diff --cached --no-renames --raw -z -- "${files[@]}")
+
+  headline="${push_message%%$'\n'*}"
+  body=""
+  if [[ "${push_message}" == *$'\n'* ]]; then
+    body="${push_message#*$'\n'}"
+    body="${body#"${body%%[!$'\n']*}"}"
+  fi
+  jq -s --arg repository "${REPOSITORY}" --arg branch "${BRANCH}" --arg head "${head}" \
+    --arg headline "${headline}" --arg body "${body}" '{
+      query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+      variables: {input: {
+        branch: {repositoryNameWithOwner: $repository, branchName: $branch},
+        expectedHeadOid: $head,
+        message: ({headline: $headline} + (if $body == "" then {} else {body: $body} end)),
+        fileChanges: {
+          additions: [.[] | .addition | select(.)],
+          deletions: [.[] | .deletion | select(.)]
+        }
+      }}
+    }' "${changes}" >"${work}/payload.json"
+
+  if ! sha="$(gh api graphql --input "${work}/payload.json" --jq .data.createCommitOnBranch.commit.oid 2>"${work}/error")"; then
+    error="$(cat "${work}/error")"
+    die "the token could not commit to ${BRANCH}: ${error%.}. If ${BRANCH} moved, dispatch the workflow again. Otherwise add the App to the bypass list of the branch ruleset, or use mode: pull-request."
+  fi
+  [[ -n "${sha}" ]] || die "GitHub returned no commit for ${BRANCH}. Check ${BRANCH} before you dispatch the workflow again."
+  git fetch -q origin "${sha}" || die_landed "could not fetch the commit ${sha}."
+  printf '%s\n' "${sha}"
 }
 
 # Says what to do when the change is on the branch but the run cannot go on.

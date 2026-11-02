@@ -17,7 +17,7 @@ inputs:
     required: false
     default: ""
   message:
-    description: "Commit message and pull request title, used verbatim. Required without version."
+    description: "Commit message and pull request title, used verbatim, except that a push puts a blank line after the first line. Required without version."
     required: false
     default: ""
   branch:
@@ -65,7 +65,7 @@ inputs:
     required: false
     default: "120"
   token:
-    description: "Token for the GitHub API, with contents: write and pull-requests: write. Only pull-request uses it: git pushes with the credentials of actions/checkout."
+    description: "Token for the GitHub API, with contents: write and pull-requests: write. The commit of a push uses the token of actions/checkout, and this token only when the checkout keeps none."
     required: false
     default: ${{ github.token }}
 

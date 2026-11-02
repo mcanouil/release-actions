@@ -120,7 +120,7 @@ Then the step stops when no App is set.
 
 If GitHub does not answer the lookup of the App bot or of the owner, the identity is `github-actions[bot]`, and the step writes a warning.
 
-Give the `token` output to `actions/checkout`, because `land` pushes with the credentials that checkout keeps.
+Give the `token` output to `actions/checkout`, because `land` uses the token that checkout keeps.
 
 | Input | Default | Description |
 | --- | --- | --- |
@@ -408,7 +408,21 @@ With a `version`, `land` uses the defaults of a release, where `<tag>` is `<tag-
 Without a `version`, give `message`, and `branch` for `mode: pull-request`.
 `land` uses `message` verbatim, as the commit message and the pull request title.
 
-With `mode: push`, `land` commits and pushes to the branch of the workflow, or to `base`.
+With `mode: push`, `land` makes the commit on the branch of the workflow, or on `base`, through the GitHub API.
+GitHub signs this commit, so the commit shows as verified.
+The author of the commit is the owner of the token, for example the bot of the App.
+`land` uses the token that `actions/checkout` keeps.
+If the checkout keeps no token, `land` uses `token`.
+`land` needs `jq` and `base64` for this mode.
+
+The push mode has these limits:
+
+- The branch must exist on GitHub, and `HEAD` must be its tip.
+  A push lands the files only, not local commits.
+- GitHub puts a blank line after the first line of the message.
+- The API cannot set a file mode.
+  If a changed file is executable or a symbolic link, `land` stops with an error.
+  Use `mode: pull-request` for these files.
 
 With `mode: pull-request`, `land` does these steps:
 
@@ -444,7 +458,7 @@ The next steps, for example a build, use the landed files.
 | `allow-unchanged` | `false` | When the files have no change, stop with success and `changed: false`. |
 | `merge-timeout` | `600` | Seconds to wait for the pull request to merge. |
 | `blocked-after` | `120` | Seconds after which a pull request that is blocked with no check is an error. |
-| `token` | `github.token` | Token for the GitHub API in `pull-request` mode, with `contents: write` and `pull-requests: write`. |
+| `token` | `github.token` | Token for the GitHub API, with `contents: write` and `pull-requests: write`. The commit of a push uses the token of `actions/checkout`, and this token only when the checkout keeps none. |
 
 | Output | Description |
 | --- | --- |
@@ -452,8 +466,8 @@ The next steps, for example a build, use the landed files.
 | `changed` | `true` when the files had a change, else `false`. |
 | `pull-request` | URL of the pull request, in `pull-request` mode. |
 
-`land` pushes with the credentials that `actions/checkout` keeps, in both modes.
-Thus the token of the checkout decides if the push is accepted.
+`land` uses the token that `actions/checkout` keeps for the commit of a push, and for the push of a pull request branch.
+Thus the token of the checkout decides if GitHub accepts the change.
 Give the same token to `actions/checkout` and to `land`.
 
 `land` commits only the paths in `files`, even if an earlier step staged other files.
@@ -483,7 +497,7 @@ flowchart TD
   staged -- "no, allow-unchanged" --> unchanged(["changed=false, empty sha"])
   staged -- "no" --> stop(["error: nothing to land"])
   staged -- "yes" --> mode{"mode"}
-  mode -- "push" --> push["commit, push to the branch"]
+  mode -- "push" --> push["commit on the branch<br/>through the API"]
   push --> done(["check out sha, changed=true"])
   mode -- "pull-request" --> branch["commit on the head branch;<br/>update an open pull request"]
   branch --> merge{"merge"}
