@@ -413,11 +413,13 @@ GitHub signs this commit, so the commit shows as verified.
 The author of the commit is the owner of the token, for example the bot of the App.
 `land` uses the token that `actions/checkout` keeps.
 If the checkout keeps no token, `land` uses `token`.
-`land` needs `jq` for this mode.
+`land` needs `jq` and `base64` for this mode.
 
 The push mode has these limits:
 
-- The branch must exist on GitHub.
+- The branch must exist on GitHub, and `HEAD` must be its tip.
+  A push lands the files only, not local commits.
+- GitHub puts a blank line after the first line of the message.
 - The API cannot set a file mode.
   If a changed file is executable or a symbolic link, `land` stops with an error.
   Use `mode: pull-request` for these files.
@@ -456,7 +458,7 @@ The next steps, for example a build, use the landed files.
 | `allow-unchanged` | `false` | When the files have no change, stop with success and `changed: false`. |
 | `merge-timeout` | `600` | Seconds to wait for the pull request to merge. |
 | `blocked-after` | `120` | Seconds after which a pull request that is blocked with no check is an error. |
-| `token` | `github.token` | Token for the GitHub API in `pull-request` mode, with `contents: write` and `pull-requests: write`. |
+| `token` | `github.token` | Token for the GitHub API, with `contents: write` and `pull-requests: write`. The commit of a push uses the token of `actions/checkout`, and this token only when the checkout keeps none. |
 
 | Output | Description |
 | --- | --- |

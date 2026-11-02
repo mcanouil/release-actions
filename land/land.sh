@@ -241,8 +241,13 @@ checkout_token() {
 # GitHub makes the commit of a push through the API, and signs it, so that it
 # shows as verified. The API sets no file mode, so only regular files land.
 land_push() {
-  local head work changes meta path headline body sha error token
+  local head remote work changes meta path headline body sha error token
   head="$(git rev-parse HEAD)"
+  remote="$(git ls-remote origin "refs/heads/${BRANCH}")" ||
+    die "could not read ${BRANCH} on origin. Check that the token can read the repository."
+  remote="${remote%%[[:space:]]*}"
+  [[ "${remote}" == "${head}" ]] ||
+    die "HEAD is not the tip of ${BRANCH} on origin. If ${BRANCH} moved, dispatch the workflow again. A push lands the files only, not local commits: use mode: pull-request to land local commits."
   work="$(mktemp -d "$(temp_dir)/land-push.XXXXXX")"
   changes="${work}/changes"
   : >"${changes}"

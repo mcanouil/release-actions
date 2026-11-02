@@ -146,9 +146,15 @@ assert_contains "${ERR}" "pull-request" "executable file hint"
 fixture
 seed_commit --allow-empty -m moved
 run_land
-refuses "bypass list" "push refused"
-assert_contains "${ERR}" "pull-request" "push refused hint"
-assert_contains "${ERR}" "Expected branch to point to" "push refused cause"
+refuses "is not the tip of main on origin" "push after main moved"
+assert_contains "${ERR}" "dispatch the workflow again" "push after main moved hint"
+
+fixture
+git commit -q --allow-empty -m local
+run_land
+refuses "is not the tip of main on origin" "push with a local commit"
+assert_contains "${ERR}" "local commits" "push with a local commit hint"
+assert_eq "init" "$(git -C "${GH_ORIGIN}" log -1 --format=%s main)" "push with a local commit adds no commit"
 
 fixture
 run_land GH_COMMIT_FAILS=1
@@ -394,6 +400,12 @@ fixture
 run_land VERSION= MESSAGE="${message}"
 assert_status 0 "${STATUS}" "custom push message: ${ERR}"
 assert_eq "${message}" "$(git -C "${GH_ORIGIN}" log -1 --format=%B main | sed '$d')" "custom push message verbatim"
+
+fixture
+run_land VERSION= MESSAGE=$'ci: refresh goldens\nBy the nightly run.'
+assert_status 0 "${STATUS}" "push message with no blank line: ${ERR}"
+assert_eq $'ci: refresh goldens\n\nBy the nightly run.' "$(git -C "${GH_ORIGIN}" log -1 --format=%B main | sed '$d')" \
+  "push puts a blank line after the first line"
 
 fixture
 export GH_HEAD_BRANCH=ci/update-thumbs
