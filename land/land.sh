@@ -224,28 +224,35 @@ if [[ "${MODE}" == "pull-request" ]]; then
     die "labels lists $(join_list "${missing[@]}"), which ${REPOSITORY} does not have. Create them in the repository, or remove them from labels."
 fi
 
-# Prints the token that actions/checkout keeps in the git config, or the token
-# input when there is none, so that the checkout token decides in both modes.
-checkout_token() {
-  local header token
-  header="$(git config --get "http.${GITHUB_SERVER_URL:-https://github.com}/.extraheader" || true)"
+# Sets GH_TOKEN to the token that actions/checkout keeps in the git config, so
+# that the checkout token decides in both modes. When the checkout keeps none,
+# git reads origin with the token input, through the environment so that the
+# token stays out of the process list.
+use_checkout_token() {
+  local key header token
+  key="http.${GITHUB_SERVER_URL:-https://github.com}/.extraheader"
+  header="$(git config --get "${key}" || true)"
   if [[ "${header}" == "AUTHORIZATION: basic "* ]] &&
     token="$(printf '%s' "${header#AUTHORIZATION: basic }" | base64 -d 2>/dev/null)" &&
     [[ "${token}" == "x-access-token:"?* ]]; then
-    printf '%s\n' "${token#x-access-token:}"
+    export GH_TOKEN="${token#x-access-token:}"
   else
-    printf '%s\n' "${GH_TOKEN:-}"
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="${key}"
+    GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN:-}" | base64 | tr -d '\n')"
+    export GIT_CONFIG_VALUE_0
   fi
 }
 
 # GitHub makes the commit of a push through the API, and signs it, so that it
 # shows as verified. The API sets no file mode, so only regular files land.
 land_push() {
-  local head remote work changes meta path headline body sha error token
+  local head remote work changes meta path old new headline body sha error
+  use_checkout_token
   head="$(git rev-parse HEAD)"
   remote="$(git ls-remote origin "refs/heads/${BRANCH}")" ||
     die "could not read ${BRANCH} on origin. Check that the token can read the repository."
   remote="${remote%%[[:space:]]*}"
+  [[ -n "${remote}" ]] || die "origin has no branch ${BRANCH}. A push lands on an existing branch only: create ${BRANCH} first."
   [[ "${remote}" == "${head}" ]] ||
     die "HEAD is not the tip of ${BRANCH} on origin. If ${BRANCH} moved, dispatch the workflow again. A push lands the files only, not local commits: use mode: pull-request to land local commits."
   work="$(mktemp -d "$(temp_dir)/land-push.XXXXXX")"
@@ -256,14 +263,15 @@ land_push() {
     *" D")
       jq -nc --arg path "${path}" '{deletion: {path: $path}}' >>"${changes}"
       ;;
-    ":"[0-7]*" 100644 "*)
+    ":100644 100644 "* | ":000000 100644 "*)
       git cat-file blob ":${path}" | base64 | tr -d '\n' >"${work}/contents"
       jq -nc --arg path "${path}" --rawfile contents "${work}/contents" \
         '{addition: {path: $path, contents: $contents}}' >>"${changes}"
       ;;
     *)
-      read -r _ mode _ <<<"${meta}"
-      die "${path} has mode ${mode}, and a push lands regular files only. Use mode: pull-request for it."
+      read -r old new _ <<<"${meta#:}"
+      [[ "${new}" != 100644 ]] || new="${old}"
+      die "${path} has mode ${new}, and a push lands regular files only. Use mode: pull-request for it."
       ;;
     esac
   done < <(git diff --cached --no-renames --raw -z -- "${files[@]}")
@@ -288,8 +296,7 @@ land_push() {
       }}
     }' "${changes}" >"${work}/payload.json"
 
-  token="$(checkout_token)"
-  if ! sha="$(GH_TOKEN="${token}" gh api graphql --input "${work}/payload.json" --jq .data.createCommitOnBranch.commit.oid 2>"${work}/error")"; then
+  if ! sha="$(gh api graphql --input "${work}/payload.json" --jq .data.createCommitOnBranch.commit.oid 2>"${work}/error")"; then
     error="$(cat "${work}/error")"
     die "the token could not commit to ${BRANCH}: ${error%.}. If ${BRANCH} moved, dispatch the workflow again. Otherwise add the App to the bypass list of the branch ruleset, or use mode: pull-request."
   fi

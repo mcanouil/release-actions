@@ -126,7 +126,9 @@ fixture
 export GH_COMMIT_TOKEN="${SCRATCH}/commit-token"
 run_land
 assert_status 0 "${STATUS}" "push without checkout credentials: ${ERR}"
-assert_eq "t" "$(cat "${GH_COMMIT_TOKEN}")" "push falls back to the token input"
+assert_eq "t" "$(sed -n 1p "${GH_COMMIT_TOKEN}")" "push falls back to the token input"
+assert_eq "AUTHORIZATION: basic $(printf 'x-access-token:t' | base64)" "$(sed -n 2p "${GH_COMMIT_TOKEN}")" \
+  "git reads origin with the token input"
 fixture
 credentials="${SCRATCH}/checkout-credentials.config"
 git config -f "${credentials}" http.https://github.com/.extraheader \
@@ -134,7 +136,8 @@ git config -f "${credentials}" http.https://github.com/.extraheader \
 git config "includeIf.gitdir:$(git rev-parse --absolute-git-dir).path" "${credentials}"
 run_land
 assert_status 0 "${STATUS}" "push with checkout credentials: ${ERR}"
-assert_eq "app-token" "$(cat "${GH_COMMIT_TOKEN}")" "push uses the checkout token"
+assert_eq "app-token" "$(sed -n 1p "${GH_COMMIT_TOKEN}")" "push uses the checkout token"
+assert_eq "" "$(sed -n 2p "${GH_COMMIT_TOKEN}")" "git keeps the checkout credentials"
 unset GH_COMMIT_TOKEN
 
 fixture
@@ -142,6 +145,31 @@ chmod +x CITATION.cff
 run_land
 refuses_landing "mode 100755" "executable file"
 assert_contains "${ERR}" "pull-request" "executable file hint"
+
+fixture
+chmod +x "${SCRATCH}/seed/CITATION.cff"
+git -C "${SCRATCH}/seed" add CITATION.cff
+seed_commit -m executable
+git checkout -q -- CITATION.cff
+git pull -q
+chmod -x CITATION.cff
+run_land
+refuses_landing "mode 100755" "file that loses its executable bit"
+
+fixture
+ln -s CITATION.cff "${SCRATCH}/seed/latest.cff"
+git -C "${SCRATCH}/seed" add latest.cff
+seed_commit -m link
+git checkout -q -- CITATION.cff
+git pull -q
+rm latest.cff
+printf 'file\n' >latest.cff
+run_land FILES=latest.cff VERSION= MESSAGE='ci: x'
+refuses_landing "mode 120000" "symbolic link replaced by a file"
+
+fixture
+run_land GITHUB_REF_NAME=feature VERSION= MESSAGE='ci: x'
+refuses_landing "origin has no branch feature" "push to a missing branch"
 
 fixture
 seed_commit --allow-empty -m moved

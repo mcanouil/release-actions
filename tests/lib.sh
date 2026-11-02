@@ -61,7 +61,7 @@ refuses() {
 # GH_LABELS a file of label names, GH_LABELS_DOWN fails gh label list,
 # GH_COMMIT_FAILS fails the createCommitOnBranch call, which otherwise commits
 # on the branch of GH_ORIGIN as app[bot], saves its input in GH_COMMIT_INPUT,
-# and saves its token in GH_COMMIT_TOKEN,
+# and saves its token and the git extra header from the environment in GH_COMMIT_TOKEN,
 # GH_PR_FAILS fails gh pr create and gh pr edit,
 # GH_MERGE_FAILS fails gh pr merge, and each
 # gh pr view prints the next line of the file GH_PR_SCRIPT, repeating the last
@@ -189,7 +189,7 @@ case "$*" in
   fi
   input="$(jq -c .variables.input "$4")"
   [[ -z "${GH_COMMIT_INPUT:-}" ]] || printf '%s\n' "${input}" >"${GH_COMMIT_INPUT}"
-  [[ -z "${GH_COMMIT_TOKEN:-}" ]] || printf '%s\n' "${GH_TOKEN:-}" >"${GH_COMMIT_TOKEN}"
+  [[ -z "${GH_COMMIT_TOKEN:-}" ]] || printf '%s\n%s\n' "${GH_TOKEN:-}" "${GIT_CONFIG_VALUE_0:-}" >"${GH_COMMIT_TOKEN}"
   branch="$(jq -r .branch.branchName <<<"${input}")"
   expected="$(jq -r .expectedHeadOid <<<"${input}")"
   export GIT_DIR="${GH_ORIGIN}" GIT_INDEX_FILE="${GH_ORIGIN}/fake-gh-index"
