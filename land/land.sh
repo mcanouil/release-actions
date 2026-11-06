@@ -27,7 +27,11 @@ ALLOW_UNCHANGED="${ALLOW_UNCHANGED:-false}"
 BASE="${BASE:-}"
 BRANCH="${BASE:-${GITHUB_REF_NAME:-}}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
+# A number input of a workflow renders as 1800.0, so a whole number may carry a zero fraction.
 MERGE_TIMEOUT="${MERGE_TIMEOUT:-600}"
+if [[ "${MERGE_TIMEOUT}" =~ ^([0-9]+)\.0+$ ]]; then
+  MERGE_TIMEOUT="${BASH_REMATCH[1]}"
+fi
 POLL_INTERVAL="${LAND_POLL_INTERVAL:-10}"
 BLOCKED_AFTER="${LAND_BLOCKED_AFTER:-120}"
 MERGE_GRACE="${LAND_MERGE_GRACE:-30}"

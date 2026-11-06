@@ -395,7 +395,12 @@ run_pr MERGE_TIMEOUT=1
 refuses "create the release by hand" "merged with no merge commit"
 
 fixture
-for timeout in abc 0; do
+pr_script 'MERGEABLE|CLEAN' 'MERGED|{branch-sha}|CLEAN||0'
+run_pr MERGE_TIMEOUT=1800.0
+assert_status 0 "${STATUS}" "merge-timeout 1800.0: ${ERR}"
+
+fixture
+for timeout in abc 0 0.0 1.5; do
   run_pr MERGE_TIMEOUT="${timeout}"
   refuses_landing "merge-timeout" "merge-timeout ${timeout}"
   assert_eq "" "${LOG}" "merge-timeout ${timeout} calls no gh"
