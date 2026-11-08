@@ -419,12 +419,13 @@ The push mode has these limits:
 
 - The branch must exist on GitHub, and `HEAD` must be its tip.
   A push lands the files only, not local commits.
+- `HEAD` can be detached, for example when `actions/checkout` checks out a commit with `ref: ${{ github.sha }}`.
 - GitHub puts a blank line after the first line of the message.
 - The API cannot set a file mode.
   If a changed file is executable or a symbolic link, `land` stops with an error.
   Use `mode: pull-request` for these files.
 
-With `mode: pull-request`, `land` does these steps:
+With `mode: pull-request`, `HEAD` must be on a branch, and `land` does these steps:
 
 1. It commits on `branch`, and force-pushes this branch.
 2. If a pull request is open for this branch, `land` updates its title and body.

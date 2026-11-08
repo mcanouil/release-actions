@@ -85,8 +85,8 @@ refuses_landing "tag-prefix" "tag-prefix with a space"
 run_land GITHUB_REF_NAME=
 refuses_landing "GITHUB_REF_NAME" "empty ref name"
 git checkout -q --detach
-run_land
-refuses_landing "branch" "detached HEAD"
+run_land MODE=pull-request
+refuses_landing "branch" "pull request from a detached HEAD"
 git checkout -q main
 git checkout -q -- CITATION.cff
 run_land
@@ -107,6 +107,14 @@ fi
 assert_eq "app[bot]" "$(git -C "${GH_ORIGIN}" log -1 --format=%an main)" "push commits through the API"
 assert_eq "version: 1.5.0" "$(git -C "${GH_ORIGIN}" show main:CITATION.cff)" "push content"
 assert_eq "" "$(git status --porcelain)" "push leaves a clean tree"
+
+# A push needs no branch, so a checkout pinned to a commit lands as it is.
+fixture
+git checkout -q --detach
+run_land
+assert_status 0 "${STATUS}" "push from a detached HEAD: ${ERR}"
+assert_eq "$(origin_main)" "$(output_value sha "${OUT}")" "push from a detached HEAD sha"
+assert_eq "version: 1.5.0" "$(git -C "${GH_ORIGIN}" show main:CITATION.cff)" "push from a detached HEAD content"
 
 fixture
 export GH_COMMIT_INPUT="${SCRATCH}/commit-input.json"

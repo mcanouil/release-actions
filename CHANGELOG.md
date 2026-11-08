@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- fix: Let a `land` push run from a detached `HEAD`, such as a checkout of `github.sha`. Only `mode: pull-request` needs `HEAD` on a branch. (#14)
+
 ## 1.7.1 (2026-11-06)
 
 - fix: Accept a `merge-timeout` such as `1800.0` in `land`, which is how a workflow renders a number input.
