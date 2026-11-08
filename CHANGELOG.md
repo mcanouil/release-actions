@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 1.7.2 (2026-11-08)
+
 - fix: Let a `land` push run from a detached `HEAD`, such as a checkout of `github.sha`. Only `mode: pull-request` needs `HEAD` on a branch. (#14)
 
 ## 1.7.1 (2026-11-06)
