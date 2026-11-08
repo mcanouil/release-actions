@@ -191,8 +191,11 @@ if [[ ${#files[@]} -eq 0 ]]; then
   exit 0
 fi
 
-git symbolic-ref -q HEAD >/dev/null ||
+# A push reads only the commit of HEAD, so a checkout pinned to a commit lands
+# as it is.
+if [[ "${MODE}" == "pull-request" ]] && ! git symbolic-ref -q HEAD >/dev/null; then
   die "HEAD is not on a branch. Check out ${BRANCH} before land."
+fi
 
 # A base that origin lacks would be created by the push, and a HEAD that does
 # not build on it would bring other commits into the pull request.
